@@ -1,0 +1,2840 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ANNO 117 Produktionsplaner - Neu</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #141516;
+      --panel: #202325;
+      --panel-2: #292d2f;
+      --panel-3: #181a1b;
+      --line: #3f4648;
+      --line-soft: rgba(255,255,255,.08);
+      --text: #f4efe5;
+      --muted: #aeb6b3;
+      --gold: #d6a84f;
+      --gold-2: #f0c56a;
+      --blue: #65a7c8;
+      --green: #79b26b;
+      --red: #c26a58;
+      --shadow: 0 18px 55px rgba(0,0,0,.34);
+      --cell: 18px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      font-family: Segoe UI, system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 70% 12%, rgba(101,167,200,.1), transparent 30%), var(--bg);
+      color: var(--text);
+      display: grid;
+      grid-template-columns: 390px 1fr;
+      letter-spacing: 0;
+    }
+
+    button, input, select {
+      font: inherit;
+    }
+
+    .sidebar {
+      min-width: 0;
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      display: grid;
+      grid-template-rows: auto auto auto 1fr auto;
+      box-shadow: 12px 0 36px rgba(0,0,0,.24);
+      z-index: 2;
+    }
+
+    .brand {
+      padding: 18px 18px 16px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #252829, #1b1d1e);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--gold-2);
+    }
+
+    .sub {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .toolbar {
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      border-bottom: 1px solid var(--line);
+      background: #202325;
+    }
+
+    .btn.main-action {
+      grid-column: 1 / -1;
+      min-height: 44px;
+      font-weight: 750;
+      font-size: 14px;
+      color: #171511;
+      background: linear-gradient(180deg, #f2c86e, #c89435);
+      border-color: #ffe0a0;
+      box-shadow: 0 8px 22px rgba(214,168,79,.18);
+    }
+
+    .btn {
+      min-height: 36px;
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+      background: #303638;
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 0 10px;
+      white-space: nowrap;
+      transition: border-color .14s ease, background .14s ease, transform .14s ease;
+    }
+
+    .btn:hover { border-color: var(--gold); background: #3b4244; transform: translateY(-1px); }
+    .btn.primary { background: #735b22; border-color: var(--gold); }
+    .btn.danger { border-color: var(--red); color: #ffd7d0; }
+    .btn.icon { width: 34px; padding: 0; font-size: 17px; font-weight: 750; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn.running {
+      position: relative;
+      overflow: hidden;
+      color: #171511;
+      background: linear-gradient(180deg, #f4cf7c, #c99b3a);
+    }
+
+    .btn.running::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.28), transparent);
+      transform: translateX(-100%);
+      animation: sweep 1.1s linear infinite;
+    }
+
+    @keyframes sweep {
+      to { transform: translateX(100%); }
+    }
+
+    .filter {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-3);
+    }
+
+    .guide {
+      margin: 0;
+      border-radius: 0;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      padding: 8px 14px;
+      background: #1b1f20;
+    }
+
+    .guide summary {
+      padding: 7px 0;
+      background: transparent;
+      color: var(--gold-2);
+    }
+
+    .guide-body {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      padding: 4px 0 8px;
+    }
+
+    .guide-body ol {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .guide-body li + li {
+      margin-top: 4px;
+    }
+
+    .search {
+      width: 100%;
+      height: 38px;
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+      background: #101213;
+      color: var(--text);
+      padding: 0 12px;
+      outline: none;
+    }
+
+    .search:focus {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 3px rgba(214,168,79,.14);
+    }
+
+    .learn-panel {
+      display: grid;
+      grid-template-columns: 1fr 96px;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #171a1b;
+    }
+
+    .learn-panel label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .learn-panel input {
+      width: 100%;
+      height: 34px;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      background: #101213;
+      color: var(--text);
+      text-align: right;
+      padding: 0 8px;
+    }
+
+    .learn-visual {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    #learnPreview {
+      width: 96px;
+      height: 72px;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      background: #101213;
+      image-rendering: pixelated;
+    }
+
+    #learnLog {
+      min-height: 72px;
+      max-height: 72px;
+      overflow: hidden;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      background: rgba(255,255,255,.035);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+      padding: 6px;
+      white-space: pre-line;
+    }
+
+    .opt-live {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 8px;
+      align-items: stretch;
+      margin-top: 8px;
+    }
+
+    #optPreview {
+      width: 96px;
+      height: 72px;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      background: #101213;
+      image-rendering: pixelated;
+    }
+
+    #optLiveText {
+      min-height: 72px;
+      max-height: 72px;
+      overflow: hidden;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      background: rgba(255,255,255,.035);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+      padding: 6px;
+      white-space: pre-line;
+    }
+
+    .content {
+      overflow: auto;
+      padding: 8px 12px 14px;
+      scrollbar-color: #596063 #17191a;
+    }
+
+    details {
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 6px;
+      margin: 6px 0;
+    }
+
+    summary {
+      cursor: pointer;
+      color: var(--text);
+      font-weight: 650;
+      user-select: none;
+      list-style: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 8px;
+      border-radius: 6px;
+      background: rgba(255,255,255,.035);
+    }
+
+    summary::after {
+      content: "+";
+      color: var(--gold);
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+    }
+
+    details[open] summary::after { content: "-"; }
+
+    .catalog {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .row {
+      min-height: 58px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 9px;
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+      background: #262b2d;
+      transition: border-color .14s ease, background .14s ease, box-shadow .14s ease;
+    }
+
+    .row:hover { border-color: #687174; background: #2d3335; }
+    .row.active { border-color: var(--gold); box-shadow: inset 3px 0 0 var(--gold); }
+    .row.has-count { background: #2d332d; border-color: rgba(121,178,107,.45); }
+
+    .item-main {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: 16px 1fr;
+      gap: 9px;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .swatch {
+      width: 16px;
+      height: 34px;
+      border-radius: 4px;
+      background: var(--swatch);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+    }
+
+    .name { font-size: 13px; line-height: 1.15; font-weight: 650; }
+    .meta { color: var(--muted); font-size: 11px; margin-top: 4px; }
+    .countbox { display: flex; align-items: center; gap: 5px; }
+
+    .count {
+      width: 52px;
+      height: 34px;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      background: #111313;
+      color: var(--text);
+      text-align: center;
+      font-weight: 750;
+    }
+
+    .status {
+      padding: 12px 14px;
+      border-top: 1px solid var(--line);
+      background: #181a1b;
+      color: var(--muted);
+      font-size: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .bar {
+      height: 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #111;
+      border: 1px solid #3b4142;
+    }
+
+    .bar span {
+      display: block;
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--gold), var(--green), var(--blue));
+      transition: width .12s linear;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      font-size: 11px;
+    }
+
+    .status-pill {
+      min-width: 0;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      background: rgba(255,255,255,.035);
+      padding: 5px 6px;
+    }
+
+    .status-pill strong {
+      display: block;
+      color: var(--text);
+      font-size: 12px;
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .stage {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      background: #111314;
+    }
+
+    .topline {
+      min-height: 68px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 16px;
+      background: linear-gradient(180deg, #202425, #181a1b);
+      box-shadow: 0 10px 28px rgba(0,0,0,.18);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(96px, auto));
+      gap: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      justify-content: flex-end;
+    }
+
+    .stat {
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+      background: rgba(255,255,255,.035);
+      padding: 6px 8px;
+    }
+
+    .stat strong { color: var(--text); font-weight: 750; display: block; margin-top: 2px; }
+
+    .map-wrap {
+      overflow: auto;
+      position: relative;
+      padding: 28px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
+        #111314;
+      background-size: 32px 32px;
+    }
+
+    #map {
+      position: relative;
+      width: 1440px;
+      height: 1440px;
+      border-radius: 8px;
+      background-color: #181b1c;
+      background-image:
+        linear-gradient(#2e3436 1px, transparent 1px),
+        linear-gradient(90deg, #2e3436 1px, transparent 1px);
+      background-size: var(--cell) var(--cell);
+      box-shadow: 0 0 0 1px var(--line), var(--shadow);
+    }
+
+    .tile {
+      position: absolute;
+      left: calc(var(--x) * var(--cell));
+      top: calc(var(--y) * var(--cell));
+      width: calc(var(--w) * var(--cell));
+      height: calc(var(--h) * var(--cell));
+      background: var(--c);
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 3px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      overflow: hidden;
+      user-select: none;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.12), inset 0 -10px 20px rgba(0,0,0,.12);
+    }
+
+    .tile.field {
+      border-color: rgba(255,255,255,.08);
+      opacity: .82;
+    }
+
+    .tile.road {
+      background: #665539;
+      border-color: rgba(255,255,255,.05);
+    }
+
+    .tile.pad {
+      background: #202527;
+      border-color: rgba(255,255,255,.04);
+    }
+
+    .tile span {
+      width: 100%;
+      padding: 1px 3px;
+      font-size: 10px;
+      line-height: 1.05;
+      text-align: center;
+      text-shadow: 0 1px 2px #000;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #fff7e8;
+    }
+
+    .ghost {
+      position: absolute;
+      pointer-events: none;
+      left: calc(var(--x) * var(--cell));
+      top: calc(var(--y) * var(--cell));
+      width: calc(var(--w) * var(--cell));
+      height: calc(var(--h) * var(--cell));
+      border: 2px solid var(--gold);
+      background: rgba(215,173,75,.18);
+      border-radius: 4px;
+      display: none;
+    }
+
+    .results {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,.68);
+      backdrop-filter: blur(4px);
+      z-index: 20;
+      padding: 18px;
+    }
+
+    .modal {
+      width: min(980px, 100%);
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 14px;
+      box-shadow: 0 24px 90px rgba(0,0,0,.55);
+    }
+
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .modal-head strong { color: var(--gold-2); font-size: 17px; }
+
+    .solution-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 10px;
+    }
+
+    .solution {
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+      background: #262b2d;
+      padding: 10px;
+      cursor: pointer;
+      transition: border-color .14s ease, transform .14s ease, background .14s ease;
+    }
+
+    .solution:hover { border-color: var(--gold); transform: translateY(-2px); background: #2d3335; }
+    .mini { width: 100%; height: 150px; background: #151413; margin-bottom: 8px; image-rendering: pixelated; border-radius: 5px; border: 1px solid var(--line-soft); }
+
+    @media (max-width: 860px) {
+      body { grid-template-columns: 1fr; grid-template-rows: 44vh 56vh; }
+      .sidebar { border-right: 0; border-bottom: 1px solid var(--line); }
+      .brand { padding: 12px; }
+      .toolbar { grid-template-columns: repeat(4, 1fr); }
+      .filter { padding: 10px 12px; }
+      .topline { height: auto; min-height: 54px; align-items: flex-start; flex-direction: column; padding: 10px; }
+      .stats { grid-template-columns: repeat(2, minmax(96px, auto)); width: 100%; justify-content: stretch; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <h1>ANNO 117 Planer</h1>
+      <div class="sub">Produktionsmengen planen, optimieren, platzieren</div>
+    </div>
+
+    <div class="toolbar">
+      <button id="optimizeBtn" class="btn main-action" title="Layout aus Mengen berechnen">Optimieren</button>
+      <button id="rotateBtn" class="btn" title="Ausgewaehltes Werkzeug drehen">Drehen</button>
+      <button id="saveBtn" class="btn" title="Im Browser speichern">Save</button>
+      <button id="loadBtn" class="btn" title="Gespeicherten Stand laden">Load</button>
+      <button id="exportBtn" class="btn" title="JSON exportieren">Export</button>
+      <button id="importBtn" class="btn" title="JSON importieren">Import</button>
+      <button id="learnBtn" class="btn" title="Viele Kombinationen simulieren und lernen">Learn</button>
+      <button id="learnExportBtn" class="btn" title="Learning Memory exportieren">Mem Export</button>
+      <button id="clearBtn" class="btn danger" title="Karte leeren">Leeren</button>
+      <button id="cancelBtn" class="btn" title="Optimizer abbrechen" disabled>Stop</button>
+    </div>
+
+    <div class="filter">
+      <input id="searchInput" class="search" type="search" placeholder="Suche nach Gebaeude oder Kette">
+    </div>
+
+    <div class="learn-panel">
+      <label for="learnCount">Learning-Durchlaeufe</label>
+      <input id="learnCount" type="number" min="10" max="5000" step="10" value="500">
+      <div class="learn-visual">
+        <canvas id="learnPreview" width="96" height="72"></canvas>
+        <div id="learnLog">Noch kein Learning-Lauf.</div>
+      </div>
+    </div>
+
+    <details class="guide" open>
+      <summary>Kurzanleitung</summary>
+      <div class="guide-body">
+        <ol>
+          <li>Links mit + die gewuenschten Produktionsgebaeude zaehlen.</li>
+          <li>Optimieren klicken und warten, bis Treffer erscheinen.</li>
+          <li>Die beste Loesung wird automatisch gesetzt; Alternativen kannst du im Ergebnisfenster anklicken.</li>
+          <li>Leere Karte bedeutet: keine Menge gewaehlt oder keine Loesung gefunden.</li>
+        </ol>
+      </div>
+    </details>
+
+    <div id="catalog" class="content"></div>
+
+    <div class="status">
+      <div id="statusText">Bereit.</div>
+      <div class="bar"><span id="progress"></span></div>
+      <div class="status-grid">
+        <div class="status-pill">Rechteck<strong id="statusRect">-</strong></div>
+        <div class="status-pill">Modus<strong id="statusMode">-</strong></div>
+        <div class="status-pill">Treffer<strong id="statusHits">0</strong></div>
+        <div class="status-pill">Beste<strong id="statusBest">-</strong></div>
+      </div>
+      <div class="opt-live">
+        <canvas id="optPreview" width="96" height="72"></canvas>
+        <div id="optLiveText">Optimizer bereit.</div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="stage">
+    <div class="topline">
+      <div>
+        <strong id="toolLabel">Werkzeug: keines</strong>
+        <div class="sub" id="mapHint">Bereit</div>
+      </div>
+      <div id="stats" class="stats"></div>
+    </div>
+    <div class="map-wrap">
+      <div id="map"><div id="ghost" class="ghost"></div></div>
+    </div>
+  </main>
+
+  <div id="results" class="results">
+    <div class="modal">
+      <div class="modal-head">
+        <strong>Optimizer-Ergebnisse</strong>
+        <button id="closeResultsBtn" class="btn">Schliessen</button>
+      </div>
+      <div id="solutionGrid" class="solution-grid"></div>
+    </div>
+  </div>
+
+  <input id="fileInput" type="file" accept="application/json,.json" hidden>
+
+  <script>
+    const GRID_W = 80;
+    const GRID_H = 80;
+    const CELL = 18;
+    const STORAGE_KEY = 'anno117_neu_session_v1';
+    const LEARN_STORAGE_KEY = 'anno117_optimizer_learning_v1';
+
+    const STRATEGY_WEIGHTS = {
+      'field-first': -1800,
+      'field-reservation': -450,
+      'road-first': 350,
+      'exact': 900,
+      'fallback': 6500,
+      'spine fallback': 9000,
+    };
+
+    const FIELD_SHAPE_HINTS = {
+      field_wheat: [
+        { cols: 14, rows: 10 },
+        { cols: 10, rows: 14 },
+        { cols: 20, rows: 7 },
+        { cols: 7, rows: 20 },
+      ],
+      field_reed: [
+        { cols: 14, rows: 10 },
+        { cols: 10, rows: 14 },
+        { cols: 20, rows: 7 },
+        { cols: 7, rows: 20 },
+      ],
+      field_oat: [
+        { cols: 10, rows: 8 },
+        { cols: 8, rows: 10 },
+        { cols: 16, rows: 5 },
+        { cols: 5, rows: 16 },
+      ],
+      field_hemp: [
+        { cols: 10, rows: 8 },
+        { cols: 8, rows: 10 },
+        { cols: 12, rows: 5 },
+        { cols: 5, rows: 12 },
+      ],
+      field_pigstall: [
+        { cols: 5, rows: 1 },
+        { cols: 3, rows: 2 },
+        { cols: 2, rows: 3 },
+        { cols: 1, rows: 5 },
+      ],
+    };
+
+    const CATALOG = [
+      { group: 'Infrastruktur', id: 'road_feldweg', name: 'Feldweg', w: 1, h: 1, cat: 'infra', color: '#665539', kind: 'road' },
+      { group: 'Infrastruktur', id: 'infra_lagerhaus', name: 'Lagerhaus', w: 6, h: 6, cat: 'infra', color: '#6a5a45' },
+      { group: 'Latium: Brot', id: 'need_brot_weizenhof', name: 'Weizenhof', w: 3, h: 4, cat: 'prod', color: '#c2a14a', fields: { id: 'field_wheat', name: 'Weizen-Feld', count: 140, unitW: 1, unitH: 1, color: '#bfa846' } },
+      { group: 'Latium: Brot', id: 'need_brot_baeckerei', name: 'Baeckerei', w: 4, h: 5, cat: 'prod', color: '#b7773a' },
+      { group: 'Latium: Sandalen', id: 'need_sandalen_schweinehof', name: 'Schweinehof', w: 3, h: 4, cat: 'prod', color: '#a86b4a', fields: { id: 'field_pigstall', name: 'Stall', count: 5, unitW: 2, unitH: 3, color: '#915d42' } },
+      { group: 'Latium: Sandalen', id: 'need_sandalen_gerberei', name: 'Gerberei', w: 3, h: 4, cat: 'prod', color: '#8b5a2b' },
+      { group: 'Latium: Sandalen', id: 'need_sandalen_sandalenmacher', name: 'Sandalenmacher', w: 3, h: 4, cat: 'prod', color: '#b77b3a' },
+      { group: 'Latium: Haferbrei', id: 'need_haferbrei_haferhof', name: 'Haferhof', w: 5, h: 5, cat: 'prod', color: '#7a8f3a', fields: { id: 'field_oat', name: 'Hafer-Feld', count: 80, unitW: 1, unitH: 1, color: '#778d3a' } },
+      { group: 'Latium: Haferbrei', id: 'need_haferbrei_garkueche', name: 'Garkueche', w: 4, h: 4, cat: 'prod', color: '#a66a3f' },
+      { group: 'Latium: Tuniken', id: 'need_tuniken_latium_hanfhof', name: 'Hanfhof', w: 4, h: 3, cat: 'prod', color: '#2d7a3b', fields: { id: 'field_hemp', name: 'Hanf-Feld', count: 60, unitW: 1, unitH: 1, color: '#2f8a35' } },
+      { group: 'Latium: Tuniken', id: 'need_tuniken_latium_spinnerei', name: 'Spinnerei', w: 4, h: 3, cat: 'prod', color: '#a35b28' },
+      { group: 'Albion: Tuniken', id: 'need_tuniken_hanfhof', name: 'Hanfhof', w: 3, h: 4, cat: 'prod', color: '#2d7a3b', fields: { id: 'field_hemp', name: 'Hanf-Feld', count: 80, unitW: 1, unitH: 1, color: '#2f8a35' } },
+      { group: 'Albion: Tuniken', id: 'need_tuniken_spinnerei', name: 'Spinnerei', w: 3, h: 4, cat: 'prod', color: '#a35b28' },
+      { group: 'Albion: Schilfschuhe', id: 'need_schilfschuhe_schilfsammler', name: 'Schilfsammler', w: 4, h: 4, cat: 'prod', color: '#2b7a4a', fields: { id: 'field_reed', name: 'Schilf-Feld', count: 140, unitW: 1, unitH: 1, color: '#2b7a4a' } },
+      { group: 'Albion: Schilfschuhe', id: 'need_schilfschuhe_schuhweber', name: 'Schuhweber', w: 3, h: 4, cat: 'prod', color: '#8c5a2a' },
+    ];
+
+    const catalogEl = document.getElementById('catalog');
+    const mapEl = document.getElementById('map');
+    const ghostEl = document.getElementById('ghost');
+    const statusText = document.getElementById('statusText');
+    const progressEl = document.getElementById('progress');
+    const statusRect = document.getElementById('statusRect');
+    const statusMode = document.getElementById('statusMode');
+    const statusHits = document.getElementById('statusHits');
+    const statusBest = document.getElementById('statusBest');
+    const statsEl = document.getElementById('stats');
+    const toolLabel = document.getElementById('toolLabel');
+    const mapHint = document.getElementById('mapHint');
+    const searchInput = document.getElementById('searchInput');
+    const learnCountInput = document.getElementById('learnCount');
+    const learnPreview = document.getElementById('learnPreview');
+    const learnLog = document.getElementById('learnLog');
+    const optPreview = document.getElementById('optPreview');
+    const optLiveText = document.getElementById('optLiveText');
+    const solutionGrid = document.getElementById('solutionGrid');
+    const resultsEl = document.getElementById('results');
+    const fileInput = document.getElementById('fileInput');
+
+    let selectedId = null;
+    let rotated = false;
+    let items = [];
+    let counts = Object.fromEntries(CATALOG.map(b => [b.id, 0]));
+    let cancelOptimize = false;
+    let cancelLearning = false;
+
+    function uid() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    }
+
+    function byId(id) {
+      return CATALOG.find(b => b.id === id);
+    }
+
+    function dims(base) {
+      return rotated && base.w !== base.h ? { w: base.h, h: base.w } : { w: base.w, h: base.h };
+    }
+
+    function setStatus(text, pct) {
+      statusText.textContent = text;
+      if (Number.isFinite(pct)) progressEl.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    }
+
+    function setOptimizeStatus(detail = {}) {
+      if (detail.rect && statusRect) statusRect.textContent = `${detail.rect.w}x${detail.rect.h} (${detail.rect.area})`;
+      else if (detail.rect === null && statusRect) statusRect.textContent = '-';
+      if (typeof detail.mode === 'string' && statusMode) statusMode.textContent = detail.mode;
+      if (Number.isFinite(detail.hits) && statusHits) statusHits.textContent = String(detail.hits);
+      if (detail.best && statusBest) {
+        statusBest.textContent = `${detail.best.bbox.w}x${detail.best.bbox.h} V ${detail.best.ratio.toFixed(2)}`;
+      } else if (detail.best === null && statusBest) {
+        statusBest.textContent = '-';
+      }
+    }
+
+    function drawSolutionToCanvas(canvas, sol) {
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#101213';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (!sol?.items?.length || !sol?.bbox) return;
+
+      const scale = Math.max(1, Math.floor(Math.min(canvas.width / sol.bbox.w, canvas.height / sol.bbox.h)));
+      const ox = Math.floor((canvas.width - sol.bbox.w * scale) / 2);
+      const oy = Math.floor((canvas.height - sol.bbox.h * scale) / 2);
+      const order = { pad: 0, field: 1, road: 2, building: 3 };
+      for (const it of sol.items.slice().sort((a, b) => (order[a.kind] || 0) - (order[b.kind] || 0))) {
+        ctx.fillStyle = it.color || '#777';
+        ctx.fillRect(ox + it.x * scale, oy + it.y * scale, Math.max(1, it.w * scale), Math.max(1, it.h * scale));
+      }
+    }
+
+    function setOptimizerRunning(active) {
+      const btn = document.getElementById('optimizeBtn');
+      if (btn) btn.classList.toggle('running', active);
+    }
+
+    function updateOptLive(text, sol = null) {
+      if (optLiveText) optLiveText.textContent = text;
+      drawSolutionToCanvas(optPreview, sol);
+    }
+
+    function tick() {
+      return new Promise(resolve => requestAnimationFrame(resolve));
+    }
+
+    function buildCatalog() {
+      const groups = [...new Set(CATALOG.map(b => b.group))];
+      catalogEl.innerHTML = '';
+      for (const group of groups) {
+        const details = document.createElement('details');
+        details.open = group === 'Infrastruktur' || group.includes('Brot');
+        const summary = document.createElement('summary');
+        summary.textContent = group;
+        const list = document.createElement('div');
+        list.className = 'catalog';
+        for (const b of CATALOG.filter(x => x.group === group)) {
+          const row = document.createElement('div');
+          row.className = 'row';
+          row.dataset.id = b.id;
+          row.dataset.search = `${group} ${b.name}`.toLowerCase();
+          const left = document.createElement('div');
+          left.className = 'item-main';
+          left.style.setProperty('--swatch', b.color);
+          left.innerHTML = `<div class="swatch"></div><div><div class="name">${b.name}</div><div class="meta">${b.w}x${b.h}${b.fields ? ' + Felder' : ''}</div></div>`;
+          left.addEventListener('click', () => selectTool(b.id));
+          const controls = document.createElement('div');
+          controls.className = 'countbox';
+          controls.innerHTML = `<button class="btn icon" data-dec="${b.id}">-</button><input class="count" id="count-${b.id}" type="number" min="0" max="99" value="0"><button class="btn icon" data-inc="${b.id}">+</button>`;
+          row.append(left, controls);
+          list.append(row);
+        }
+        details.append(summary, list);
+        catalogEl.append(details);
+      }
+
+      catalogEl.addEventListener('click', e => {
+        const inc = e.target.closest('[data-inc]');
+        const dec = e.target.closest('[data-dec]');
+        if (inc) updateCount(inc.dataset.inc, 1);
+        if (dec) updateCount(dec.dataset.dec, -1);
+      });
+
+      catalogEl.addEventListener('input', e => {
+        if (!e.target.classList.contains('count')) return;
+        const id = e.target.id.replace('count-', '');
+        counts[id] = Math.max(0, Math.floor(Number(e.target.value) || 0));
+        markCountState(id);
+        updateStats();
+      });
+    }
+
+    function updateCount(id, delta) {
+      counts[id] = Math.max(0, (counts[id] || 0) + delta);
+      const input = document.getElementById('count-' + id);
+      if (input) input.value = counts[id];
+      markCountState(id);
+      updateStats();
+    }
+
+    function markCountState(id) {
+      const row = catalogEl.querySelector(`.row[data-id="${id}"]`);
+      if (row) row.classList.toggle('has-count', (counts[id] || 0) > 0);
+    }
+
+    function filterCatalog() {
+      const term = (searchInput.value || '').trim().toLowerCase();
+      for (const details of catalogEl.querySelectorAll('details')) {
+        let visibleRows = 0;
+        for (const row of details.querySelectorAll('.row')) {
+          const show = !term || row.dataset.search.includes(term);
+          row.style.display = show ? '' : 'none';
+          if (show) visibleRows++;
+        }
+        details.style.display = visibleRows ? '' : 'none';
+        if (term && visibleRows) details.open = true;
+      }
+    }
+
+    function selectTool(id) {
+      selectedId = id;
+      document.querySelectorAll('.row').forEach(r => r.classList.toggle('active', r.dataset.id === id));
+      const b = byId(id);
+      const d = b ? dims(b) : null;
+      toolLabel.textContent = b ? `Werkzeug: ${b.name} (${d.w}x${d.h})` : 'Werkzeug: keines';
+      if (mapHint) mapHint.textContent = b ? `${b.group} | ${b.fields ? 'mit Feldern' : 'ohne Felder'}` : 'Bereit';
+    }
+
+    function canPlace(x, y, w, h, ignoreUid) {
+      if (x < 0 || y < 0 || x + w > GRID_W || y + h > GRID_H) return false;
+      return !items.some(it => it.uid !== ignoreUid && rectsOverlap({ x, y, w, h }, it));
+    }
+
+    function rectsOverlap(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function placeManual(x, y) {
+      const b = byId(selectedId);
+      if (!b) return;
+      const d = dims(b);
+      if (!canPlace(x, y, d.w, d.h)) return;
+      const item = {
+        uid: uid(),
+        id: b.id,
+        name: b.name,
+        x,
+        y,
+        w: d.w,
+        h: d.h,
+        color: b.color,
+        kind: b.kind || 'building'
+      };
+      items.push(item);
+      render();
+    }
+
+    function removeAt(x, y) {
+      const idx = items.findIndex(it => x >= it.x && x < it.x + it.w && y >= it.y && y < it.y + it.h);
+      if (idx >= 0) {
+        items.splice(idx, 1);
+        render();
+      }
+    }
+
+    function render() {
+      mapEl.querySelectorAll('.tile').forEach(n => n.remove());
+      for (const it of items) {
+        const el = document.createElement('div');
+        el.className = 'tile';
+        if (it.kind === 'field') el.classList.add('field');
+        if (it.kind === 'road') el.classList.add('road');
+        if (it.kind === 'pad') el.classList.add('pad');
+        el.style.setProperty('--x', it.x);
+        el.style.setProperty('--y', it.y);
+        el.style.setProperty('--w', it.w);
+        el.style.setProperty('--h', it.h);
+        el.style.setProperty('--c', it.color || '#777');
+        el.title = `${it.name} ${it.w}x${it.h}`;
+        el.innerHTML = `<span>${it.kind === 'field' || it.kind === 'pad' || it.kind === 'road' ? '' : it.name}</span>`;
+        mapEl.appendChild(el);
+      }
+      updateStats();
+    }
+
+    function updateStats() {
+      const area = items.reduce((sum, it) => sum + it.w * it.h, 0);
+      const bbox = boundingBox(items);
+      const fields = items.filter(it => it.kind === 'field').reduce((s, it) => s + it.w * it.h, 0);
+      const roads = items.filter(it => it.kind === 'road').length;
+      const selected = Object.values(counts).reduce((s, n) => s + n, 0);
+      statsEl.innerHTML = `
+        <span class="stat">Mengen <strong>${selected}</strong></span>
+        <span class="stat">Objekte <strong>${items.length}</strong></span>
+        <span class="stat">Felder <strong>${fields}</strong></span>
+        <span class="stat">Strassen <strong>${roads}</strong></span>
+        <span class="stat">Flaeche <strong>${bbox ? bbox.w + 'x' + bbox.h + ' = ' + bbox.area : '0'}</strong></span>
+        <span class="stat">Tiles <strong>${area}</strong></span>
+      `;
+    }
+
+    function boundingBox(list) {
+      if (!list.length) return null;
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const it of list) {
+        minX = Math.min(minX, it.x);
+        minY = Math.min(minY, it.y);
+        maxX = Math.max(maxX, it.x + it.w);
+        maxY = Math.max(maxY, it.y + it.h);
+      }
+      return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY, area: (maxX - minX) * (maxY - minY) };
+    }
+
+    function makeCluster(base, index) {
+      const farmUid = uid();
+      if (!base.fields) {
+        const parts = [];
+        parts.push({ uid: farmUid, id: base.id, name: base.name, x: 0, y: 0, w: base.w, h: base.h, color: base.color, kind: base.kind || 'building' });
+        return { id: base.id + '-' + index, name: base.name, w: base.w, h: base.h, area: base.w * base.h, parts, variants: [{ w: base.w, h: base.h, area: base.w * base.h, parts }] };
+      }
+
+      const f = base.fields;
+      const unitW = Math.max(1, f.unitW || 1);
+      const unitH = Math.max(1, f.unitH || 1);
+
+      function unitLayouts(count) {
+        const layouts = [];
+        for (let cols = 1; cols <= count; cols++) {
+          const rows = Math.ceil(count / cols);
+          const spare = cols * rows - count;
+          const fw = cols * unitW;
+          const fh = rows * unitH;
+          const ratio = Math.max(fw, fh) / Math.max(1, Math.min(fw, fh));
+          layouts.push({ cols, rows, fw, fh, spare, ratio });
+        }
+        layouts.sort((a, b) => a.spare - b.spare || a.ratio - b.ratio || (a.fw * a.fh) - (b.fw * b.fh));
+        return layouts.slice(0, 10);
+      }
+
+      function fieldParts(layout, ox, oy) {
+        const out = [];
+        for (let n = 0; n < f.count; n++) {
+          const cx = n % layout.cols;
+          const cy = Math.floor(n / layout.cols);
+          out.push({
+            uid: uid(),
+            id: f.id,
+            name: f.name,
+            x: ox + cx * unitW,
+            y: oy + cy * unitH,
+            w: unitW,
+            h: unitH,
+            color: f.color,
+            kind: 'field',
+            farmUid
+          });
+        }
+        return out;
+      }
+
+      function makeVariant(layout, side) {
+        let w, h, farmX, farmY, fieldX, fieldY;
+        if (side === 'right') {
+          w = layout.fw + base.w;
+          h = Math.max(layout.fh, base.h);
+          fieldX = 0;
+          fieldY = Math.floor((h - layout.fh) / 2);
+          farmX = layout.fw;
+          farmY = Math.floor((h - base.h) / 2);
+        } else if (side === 'left') {
+          w = layout.fw + base.w;
+          h = Math.max(layout.fh, base.h);
+          farmX = 0;
+          farmY = Math.floor((h - base.h) / 2);
+          fieldX = base.w;
+          fieldY = Math.floor((h - layout.fh) / 2);
+        } else if (side === 'bottom') {
+          w = Math.max(layout.fw, base.w);
+          h = layout.fh + base.h;
+          fieldX = Math.floor((w - layout.fw) / 2);
+          fieldY = 0;
+          farmX = Math.floor((w - base.w) / 2);
+          farmY = layout.fh;
+        } else {
+          w = Math.max(layout.fw, base.w);
+          h = layout.fh + base.h;
+          farmX = Math.floor((w - base.w) / 2);
+          farmY = 0;
+          fieldX = Math.floor((w - layout.fw) / 2);
+          fieldY = base.h;
+        }
+
+        const parts = [
+          { uid: farmUid, id: base.id, name: base.name, x: farmX, y: farmY, w: base.w, h: base.h, color: base.color, kind: 'building' },
+          ...fieldParts(layout, fieldX, fieldY)
+        ];
+        const occupied = base.w * base.h + f.count * unitW * unitH;
+        const moduleArea = w * h;
+        const ratio = Math.max(w, h) / Math.max(1, Math.min(w, h));
+        return { w, h, area: moduleArea, occupied, waste: moduleArea - occupied, ratio, parts };
+      }
+
+      const variants = [];
+      const seen = new Set();
+      for (const layout of unitLayouts(f.count)) {
+        for (const side of ['right', 'bottom', 'left', 'top']) {
+          const v = makeVariant(layout, side);
+          const sig = `${v.w}x${v.h}:${side}:${layout.cols}x${layout.rows}`;
+          if (seen.has(sig)) continue;
+          seen.add(sig);
+          variants.push(v);
+        }
+      }
+
+      variants.sort((a, b) => a.waste - b.waste || a.ratio - b.ratio || a.area - b.area);
+      const best = variants[0];
+      return { id: base.id + '-' + index, name: base.name, w: best.w, h: best.h, area: best.area, parts: best.parts, variants: variants.slice(0, 24) };
+    }
+
+    function clustersFromCounts(countMap) {
+      const clusters = [];
+      for (const base of CATALOG) {
+        if (base.kind === 'road') continue;
+        const n = countMap[base.id] || 0;
+        for (let i = 0; i < n; i++) clusters.push(makeCluster(base, i));
+      }
+      if (clusters.length && !clusters.some(c => c.id.startsWith('infra_lagerhaus-'))) {
+        const warehouse = byId('infra_lagerhaus');
+        if (warehouse) clusters.unshift(makeCluster(warehouse, 0));
+      }
+      return clusters;
+    }
+
+    function expandCounts() {
+      return clustersFromCounts(counts);
+    }
+
+    function clusterVariantsFor(source, allowRotate, width, height, limit = 16) {
+      const baseVariants = Array.isArray(source.variants) && source.variants.length ? source.variants : [source];
+      const variants = [];
+      const seen = new Set();
+
+      function cloneVariant(baseVariant) {
+        return {
+          ...source,
+          w: baseVariant.w,
+          h: baseVariant.h,
+          area: baseVariant.area || (baseVariant.w * baseVariant.h),
+          parts: baseVariant.parts.map(p => ({ ...p }))
+        };
+      }
+
+      for (const baseVariant of baseVariants) {
+        const normal = cloneVariant(baseVariant);
+        const normalSig = `${normal.w}x${normal.h}:${normal.parts.map(p => `${p.id}@${p.x},${p.y},${p.w},${p.h}`).join('|')}`;
+        if (!seen.has(normalSig)) {
+          seen.add(normalSig);
+          variants.push(normal);
+        }
+
+        if (allowRotate && normal.w !== normal.h) {
+          const rotated = cloneVariant(normal);
+          rotateCluster(rotated);
+          const rotatedSig = `${rotated.w}x${rotated.h}:${rotated.parts.map(p => `${p.id}@${p.x},${p.y},${p.w},${p.h}`).join('|')}`;
+          if (!seen.has(rotatedSig)) {
+            seen.add(rotatedSig);
+            variants.push(rotated);
+          }
+        }
+      }
+
+      return variants
+        .filter(v => v.w <= width - 2 && v.h <= height - 2)
+        .sort((a, b) => {
+          const aw = Math.max(0, (a.w * a.h) - a.parts.reduce((sum, p) => sum + p.w * p.h, 0));
+          const bw = Math.max(0, (b.w * b.h) - b.parts.reduce((sum, p) => sum + p.w * p.h, 0));
+          const ar = Math.max(a.w, a.h) / Math.max(1, Math.min(a.w, a.h));
+          const br = Math.max(b.w, b.h) / Math.max(1, Math.min(b.w, b.h));
+          return aw - bw || ar - br || a.area - b.area;
+        })
+        .slice(0, limit);
+    }
+
+    function packExactRect(clusters, width, height, orderName, allowRotate) {
+      const list = clusters.map(c => ({ ...c, parts: c.parts.map(p => ({ ...p })) }));
+      if (orderName === 'height') list.sort((a, b) => b.h - a.h || b.area - a.area);
+      if (orderName === 'area') list.sort((a, b) => b.area - a.area || b.h - a.h);
+      if (orderName === 'wide') list.sort((a, b) => b.w - a.w || b.area - a.area);
+      if (orderName === 'narrow') list.sort((a, b) => a.w - b.w || b.area - a.area);
+      if (orderName === 'square') list.sort((a, b) => Math.abs(a.w - a.h) - Math.abs(b.w - b.h) || b.area - a.area);
+
+      const innerW = width - 2;
+      const innerH = height - 2;
+      if (innerW <= 0 || innerH <= 0) return null;
+
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const domains = list.map((cluster, idx) => {
+        const variants = clusterVariantsFor(cluster, allowRotate, width, height, 14);
+        const placements = [];
+        for (const variant of variants) {
+          for (let y = 1; y <= height - 1 - variant.h; y++) {
+            for (let x = 1; x <= width - 1 - variant.w; x++) {
+              const edgeTouch = x === 1 || y === 1 || x + variant.w === width - 1 || y + variant.h === height - 1;
+              const cx = x + variant.w / 2;
+              const cy = y + variant.h / 2;
+              const ratio = Math.max(variant.w, variant.h) / Math.max(1, Math.min(variant.w, variant.h));
+              const score = Math.abs(cx - centerX) + Math.abs(cy - centerY) + ratio * 2 - (edgeTouch ? 1.5 : 0);
+              placements.push({ cluster: variant, x, y, score, idx });
+            }
+          }
+        }
+        placements.sort((a, b) => a.score - b.score || a.y - b.y || a.x - b.x);
+        return placements.slice(0, 260);
+      });
+
+      if (domains.some(d => !d.length)) return null;
+
+      const occupied = new Uint8Array(width * height);
+      const placed = new Array(list.length);
+      const used = new Array(list.length).fill(false);
+      let nodes = 0;
+      const nodeLimit = Math.max(2500, Math.min(70000, list.length * 9000));
+      const deadline = performance.now() + Math.max(24, Math.min(140, list.length * 18));
+
+      function canPlace(pl) {
+        const c = pl.cluster;
+        for (let y = pl.y; y < pl.y + c.h; y++) {
+          const row = y * width;
+          for (let x = pl.x; x < pl.x + c.w; x++) {
+            if (occupied[row + x]) return false;
+          }
+        }
+        return true;
+      }
+
+      function setPlace(pl, value) {
+        const c = pl.cluster;
+        for (let y = pl.y; y < pl.y + c.h; y++) {
+          const row = y * width;
+          for (let x = pl.x; x < pl.x + c.w; x++) occupied[row + x] = value;
+        }
+      }
+
+      function chooseNext() {
+        let bestIdx = -1;
+        let bestOptions = null;
+        for (let i = 0; i < domains.length; i++) {
+          if (used[i]) continue;
+          const options = [];
+          for (const pl of domains[i]) {
+            if (canPlace(pl)) options.push(pl);
+            if (options.length > 42) break;
+          }
+          if (!options.length) return { idx: i, options };
+          if (!bestOptions || options.length < bestOptions.length) {
+            bestIdx = i;
+            bestOptions = options;
+            if (options.length === 1) break;
+          }
+        }
+        return { idx: bestIdx, options: bestOptions || [] };
+      }
+
+      function search(depth) {
+        nodes++;
+        if (nodes > nodeLimit || performance.now() > deadline) return false;
+        if (depth === list.length) return true;
+
+        const next = chooseNext();
+        if (next.idx < 0 || !next.options.length) return false;
+        used[next.idx] = true;
+
+        for (const pl of next.options) {
+          placed[next.idx] = pl;
+          setPlace(pl, 1);
+          if (search(depth + 1)) return true;
+          setPlace(pl, 0);
+          placed[next.idx] = null;
+        }
+
+        used[next.idx] = false;
+        return false;
+      }
+
+      if (!search(0)) return null;
+
+      const packed = [];
+      for (const pl of placed) {
+        for (const p of pl.cluster.parts) packed.push({ ...p, x: pl.x + p.x, y: pl.y + p.y });
+      }
+
+      const roads = addRoadsInRect(packed, width, height);
+      if (!roads) return null;
+      const all = packed.concat(roads);
+      fillSolidPads(all, width, height);
+      const bbox = boundingBox(all);
+      if (!bbox || bbox.w !== width || bbox.h !== height) return null;
+      if (!validateRoadRules(all)) return null;
+      if (!validateSolidRectangle(all, width, height)) return null;
+      return scoreSolution(all, `exact ${orderName}${allowRotate ? ' rot' : ''}`);
+    }
+
+    function buildSpineFallback(clusters) {
+      const modules = clusters.map(cluster => {
+        const variants = clusterVariantsFor(cluster, true, GRID_W, GRID_H, 32);
+        const leftDocked = variants.filter(v => v.parts.some(p => p.kind === 'building' && p.x === 0));
+        const options = leftDocked.length ? leftDocked : variants;
+        options.sort((a, b) => {
+          const ar = Math.max(a.w, a.h) / Math.max(1, Math.min(a.w, a.h));
+          const br = Math.max(b.w, b.h) / Math.max(1, Math.min(b.w, b.h));
+          return ar - br || a.h - b.h || a.w - b.w;
+        });
+        const best = options[0];
+        return best ? { cluster: best, w: best.w, h: best.h } : null;
+      }).filter(Boolean);
+
+      if (!modules.length) return null;
+
+      const columns = [];
+      let current = { x: 0, y: 1, width: 1, height: 1, modules: [] };
+
+      for (const mod of modules) {
+        if (current.modules.length && current.y + mod.h > GRID_H) {
+          columns.push(current);
+          const nextX = current.x + current.width;
+          current = { x: nextX, y: 1, width: 1, height: 1, modules: [] };
+        }
+        if (current.x + 1 + mod.w > GRID_W || 1 + mod.h > GRID_H) return null;
+        current.modules.push({ ...mod, x: current.x + 1, y: current.y });
+        current.width = Math.max(current.width, 1 + mod.w);
+        current.y += mod.h;
+        current.height = Math.max(current.height, current.y);
+      }
+      columns.push(current);
+
+      const width = Math.max(1, ...columns.map(c => c.x + c.width));
+      const height = Math.max(1, ...columns.map(c => c.height));
+      if (width > GRID_W || height > GRID_H) return null;
+
+      const itemsLocal = [];
+      const roadSet = new Set();
+      const addRoad = (x, y) => {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        roadSet.add(x + ',' + y);
+      };
+
+      for (let x = 0; x < width; x++) addRoad(x, 0);
+      for (const col of columns) {
+        for (let y = 0; y < height; y++) addRoad(col.x, y);
+        for (const mod of col.modules) {
+          for (const p of mod.cluster.parts) {
+            itemsLocal.push({ ...p, uid: uid(), x: mod.x + p.x, y: mod.y + p.y });
+          }
+        }
+      }
+
+      const blocked = new Set();
+      for (const it of itemsLocal) {
+        for (let y = it.y; y < it.y + it.h; y++) {
+          for (let x = it.x; x < it.x + it.w; x++) blocked.add(x + ',' + y);
+        }
+      }
+
+      for (const keyValue of roadSet) {
+        if (blocked.has(keyValue)) continue;
+        const comma = keyValue.indexOf(',');
+        const x = Number(keyValue.slice(0, comma));
+        const y = Number(keyValue.slice(comma + 1));
+        itemsLocal.push({ uid: uid(), id: 'road_feldweg', name: 'Feldweg', x, y, w: 1, h: 1, color: '#665539', kind: 'road' });
+      }
+
+      fillSolidPads(itemsLocal, width, height);
+      if (!validateRoadRules(itemsLocal)) return null;
+      if (!validateSolidRectangle(itemsLocal, width, height)) return null;
+      return scoreSolution(itemsLocal, 'spine fallback');
+    }
+
+    function buildRoadFirstLayout(clusters) {
+      function topRoadVariants(cluster) {
+        const variants = clusterVariantsFor(cluster, true, GRID_W, GRID_H, 36)
+          .filter(v => v.parts.some(p => p.kind === 'building' && p.y === 0))
+          .sort((a, b) => {
+            const ar = Math.max(a.w, a.h) / Math.max(1, Math.min(a.w, a.h));
+            const br = Math.max(b.w, b.h) / Math.max(1, Math.min(b.w, b.h));
+            const aw = Math.max(0, (a.w * a.h) - a.parts.reduce((sum, p) => sum + p.w * p.h, 0));
+            const bw = Math.max(0, (b.w * b.h) - b.parts.reduce((sum, p) => sum + p.w * p.h, 0));
+            return ar - br || aw - bw || a.w - b.w;
+          });
+        return variants.length ? variants.slice(0, 8) : clusterVariantsFor(cluster, true, GRID_W, GRID_H, 8);
+      }
+
+      const modules = clusters
+        .map(cluster => ({ cluster, variants: topRoadVariants(cluster) }))
+        .filter(m => m.variants.length)
+        .sort((a, b) => {
+          const ab = a.cluster.id.startsWith('infra_lagerhaus-') ? -1 : 0;
+          const bb = b.cluster.id.startsWith('infra_lagerhaus-') ? -1 : 0;
+          if (ab !== bb) return ab - bb;
+          return b.cluster.area - a.cluster.area;
+        });
+
+      if (!modules.length) return null;
+
+      const requiredArea = modules.reduce((sum, m) => sum + Math.min(...m.variants.map(v => v.w * v.h)), 0);
+      const targetWidths = [];
+      const minWidth = Math.max(12, Math.floor(Math.sqrt(requiredArea) * 0.9));
+      const maxWidth = Math.min(GRID_W, Math.ceil(Math.sqrt(requiredArea) * 1.9) + 18);
+      for (let w = minWidth; w <= maxWidth; w++) targetWidths.push(w);
+      targetWidths.sort((a, b) => Math.abs(a - Math.sqrt(requiredArea)) - Math.abs(b - Math.sqrt(requiredArea)));
+
+      const solutionsLocal = [];
+
+      for (const targetWidth of targetWidths.slice(0, 34)) {
+        const rows = [];
+        let row = { modules: [], width: 0, height: 1 };
+
+        for (const module of modules) {
+          const candidates = module.variants
+            .filter(v => v.w <= targetWidth)
+            .map(v => ({
+              variant: v,
+              newWidth: row.modules.length ? row.width + 1 + v.w : v.w,
+              newHeight: Math.max(row.height, 1 + v.h)
+            }))
+            .filter(c => c.newWidth <= targetWidth)
+            .sort((a, b) => {
+              const fillA = Math.abs(targetWidth - a.newWidth);
+              const fillB = Math.abs(targetWidth - b.newWidth);
+              return fillA - fillB || a.newHeight - b.newHeight;
+            });
+
+          let picked = candidates[0];
+          if (!picked && row.modules.length) {
+            rows.push(row);
+            row = { modules: [], width: 0, height: 1 };
+            picked = module.variants
+              .filter(v => v.w <= targetWidth)
+              .map(v => ({ variant: v, newWidth: v.w, newHeight: 1 + v.h }))
+              .sort((a, b) => a.newHeight - b.newHeight || b.newWidth - a.newWidth)[0];
+          }
+
+          if (!picked) {
+            row = null;
+            break;
+          }
+
+          row.modules.push({ cluster: picked.variant, x: row.width ? row.width + 1 : 0, y: 1 });
+          row.width = picked.newWidth;
+          row.height = picked.newHeight;
+        }
+
+        if (!row) continue;
+        if (row.modules.length) rows.push(row);
+
+        const width = Math.max(...rows.map(r => r.width));
+        const height = rows.reduce((sum, r) => sum + r.height, 0);
+        if (width > GRID_W || height > GRID_H) continue;
+
+        const out = [];
+        let y = 0;
+        for (const r of rows) {
+          for (let x = 0; x < width; x++) {
+            out.push({ uid: uid(), id: 'road_feldweg', name: 'Feldweg', x, y, w: 1, h: 1, color: '#665539', kind: 'road' });
+          }
+          for (const mod of r.modules) {
+            for (const p of mod.cluster.parts) {
+              out.push({ ...p, uid: uid(), x: mod.x + p.x, y: y + mod.y + p.y });
+            }
+          }
+          y += r.height;
+        }
+        for (let yy = 0; yy < height; yy++) {
+          if (!out.some(it => it.kind === 'road' && it.x === 0 && it.y === yy)) {
+            out.push({ uid: uid(), id: 'road_feldweg', name: 'Feldweg', x: 0, y: yy, w: 1, h: 1, color: '#665539', kind: 'road' });
+          }
+        }
+
+        fillSolidPads(out, width, height);
+        if (!validateRoadRules(out)) continue;
+        if (!validateSolidRectangle(out, width, height)) continue;
+        solutionsLocal.push(scoreSolution(out, 'road-first'));
+      }
+
+      solutionsLocal.sort((a, b) => a.score - b.score);
+      return solutionsLocal[0] || null;
+    }
+
+    function buildFieldReservationLayout(clusters) {
+      function compactFieldLayouts(count, unitW, unitH) {
+        const layouts = [];
+        for (let cols = 1; cols <= count; cols++) {
+          const rows = Math.ceil(count / cols);
+          const spare = cols * rows - count;
+          const w = cols * unitW;
+          const h = rows * unitH;
+          const ratio = Math.max(w, h) / Math.max(1, Math.min(w, h));
+          layouts.push({ cols, rows, w, h, spare, ratio });
+        }
+        layouts.sort((a, b) => a.spare - b.spare || a.ratio - b.ratio || (a.w * a.h) - (b.w * b.h));
+        return layouts.slice(0, 8);
+      }
+
+      function makeReservationModule(cluster) {
+        const building = cluster.parts.find(p => p.kind === 'building');
+        const fields = cluster.parts.filter(p => p.kind === 'field');
+        if (!building) return null;
+
+        if (!fields.length) {
+          return [{
+            w: building.w,
+            h: building.h,
+            building: { ...building, x: 0, y: 0 },
+            fields: [],
+            score: building.w * building.h
+          }];
+        }
+
+        const first = fields[0];
+        const unitW = Math.max(1, first.w || 1);
+        const unitH = Math.max(1, first.h || 1);
+        const count = fields.length;
+        const variants = [];
+
+        for (const layout of compactFieldLayouts(count, unitW, unitH)) {
+          for (const side of ['bottom', 'right', 'left']) {
+            let w, h, buildingX, buildingY, fieldX, fieldY;
+            if (side === 'bottom') {
+              w = Math.max(building.w, layout.w);
+              h = building.h + layout.h;
+              buildingX = Math.floor((w - building.w) / 2);
+              buildingY = 0;
+              fieldX = Math.floor((w - layout.w) / 2);
+              fieldY = building.h;
+            } else if (side === 'right') {
+              w = building.w + layout.w;
+              h = Math.max(building.h, layout.h);
+              buildingX = 0;
+              buildingY = Math.floor((h - building.h) / 2);
+              fieldX = building.w;
+              fieldY = Math.floor((h - layout.h) / 2);
+            } else {
+              w = building.w + layout.w;
+              h = Math.max(building.h, layout.h);
+              fieldX = 0;
+              fieldY = Math.floor((h - layout.h) / 2);
+              buildingX = layout.w;
+              buildingY = Math.floor((h - building.h) / 2);
+            }
+
+            const fieldPlacements = [];
+            for (let n = 0; n < count; n++) {
+              const cx = n % layout.cols;
+              const cy = Math.floor(n / layout.cols);
+              fieldPlacements.push({
+                ...first,
+                uid: uid(),
+                x: fieldX + cx * unitW,
+                y: fieldY + cy * unitH,
+                w: unitW,
+                h: unitH,
+                kind: 'field'
+              });
+            }
+
+            const waste = (w * h) - (building.w * building.h) - (count * unitW * unitH);
+            variants.push({
+              w,
+              h,
+              building: { ...building, uid: uid(), x: buildingX, y: buildingY },
+              fields: fieldPlacements,
+              score: waste * 8 + layout.ratio * 40 + (side === 'bottom' ? 0 : 18)
+            });
+          }
+        }
+
+        variants.sort((a, b) => a.score - b.score || a.h - b.h || a.w - b.w);
+        return variants.slice(0, 8);
+      }
+
+      const moduleSets = clusters
+        .map(cluster => ({ cluster, variants: makeReservationModule(cluster) || [] }))
+        .filter(m => m.variants.length)
+        .sort((a, b) => {
+          const aw = a.cluster.id.startsWith('infra_lagerhaus-') ? -1 : 0;
+          const bw = b.cluster.id.startsWith('infra_lagerhaus-') ? -1 : 0;
+          if (aw !== bw) return aw - bw;
+          return b.cluster.area - a.cluster.area;
+        });
+
+      if (!moduleSets.length) return null;
+
+      const minArea = moduleSets.reduce((sum, m) => sum + Math.min(...m.variants.map(v => v.w * v.h)), 0);
+      const widths = [];
+      const ideal = Math.sqrt(minArea);
+      for (let w = Math.max(12, Math.floor(ideal * 0.9)); w <= Math.min(GRID_W, Math.ceil(ideal * 2.0) + 20); w++) widths.push(w);
+      widths.sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal));
+
+      const solutionsLocal = [];
+
+      for (const targetWidth of widths.slice(0, 42)) {
+        const rows = [];
+        let row = { modules: [], width: 0, height: 1 };
+
+        for (const moduleSet of moduleSets) {
+          const choices = moduleSet.variants
+            .filter(v => v.w <= targetWidth)
+            .map(v => {
+              const nextWidth = row.modules.length ? row.width + 1 + v.w : v.w;
+              return { variant: v, nextWidth, nextHeight: Math.max(row.height, 1 + v.h) };
+            })
+            .filter(c => c.nextWidth <= targetWidth)
+            .sort((a, b) => Math.abs(targetWidth - a.nextWidth) - Math.abs(targetWidth - b.nextWidth) || a.nextHeight - b.nextHeight || a.variant.score - b.variant.score);
+
+          let picked = choices[0];
+          if (!picked && row.modules.length) {
+            rows.push(row);
+            row = { modules: [], width: 0, height: 1 };
+            picked = moduleSet.variants
+              .filter(v => v.w <= targetWidth)
+              .map(v => ({ variant: v, nextWidth: v.w, nextHeight: 1 + v.h }))
+              .sort((a, b) => a.nextHeight - b.nextHeight || a.variant.score - b.variant.score)[0];
+          }
+          if (!picked) {
+            row = null;
+            break;
+          }
+
+          row.modules.push({ module: picked.variant, x: row.width ? row.width + 1 : 0, y: 1 });
+          row.width = picked.nextWidth;
+          row.height = picked.nextHeight;
+        }
+
+        if (!row) continue;
+        if (row.modules.length) rows.push(row);
+
+        const width = Math.max(...rows.map(r => r.width));
+        const height = rows.reduce((sum, r) => sum + r.height, 0);
+        if (width > GRID_W || height > GRID_H) continue;
+
+        const out = [];
+        let y = 0;
+        for (const r of rows) {
+          for (let x = 0; x < width; x++) out.push({ uid: uid(), id: 'road_feldweg', name: 'Feldweg', x, y, w: 1, h: 1, color: '#665539', kind: 'road' });
+          for (const placed of r.modules) {
+            const mod = placed.module;
+            out.push({ ...mod.building, uid: uid(), x: placed.x + mod.building.x, y: y + placed.y + mod.building.y });
+          }
+          for (const placed of r.modules) {
+            const mod = placed.module;
+            for (const f of mod.fields) out.push({ ...f, uid: uid(), x: placed.x + f.x, y: y + placed.y + f.y });
+          }
+          y += r.height;
+        }
+        for (let yy = 0; yy < height; yy++) {
+          if (!out.some(it => it.kind === 'road' && it.x === 0 && it.y === yy)) {
+            out.push({ uid: uid(), id: 'road_feldweg', name: 'Feldweg', x: 0, y: yy, w: 1, h: 1, color: '#665539', kind: 'road' });
+          }
+        }
+
+        fillSolidPads(out, width, height);
+        if (!validateRoadRules(out)) continue;
+        if (!validateSolidRectangle(out, width, height)) continue;
+        solutionsLocal.push(scoreSolution(out, 'field-reservation'));
+      }
+
+      solutionsLocal.sort((a, b) => a.score - b.score);
+      return solutionsLocal[0] || null;
+    }
+
+    function buildFieldFirstRowsLayout(clusters) {
+      function compactLayouts(count, unitW, unitH, fieldId) {
+        const layouts = [];
+        const hints = FIELD_SHAPE_HINTS[fieldId] || [];
+        for (const hint of hints) {
+          if ((hint.cols * hint.rows) < count) continue;
+          const spare = hint.cols * hint.rows - count;
+          const w = hint.cols * unitW;
+          const h = hint.rows * unitH;
+          const ratio = Math.max(w, h) / Math.max(1, Math.min(w, h));
+          layouts.push({ cols: hint.cols, rows: hint.rows, spare, w, h, ratio, hinted: true });
+        }
+        for (let cols = 1; cols <= count; cols++) {
+          const rows = Math.ceil(count / cols);
+          const spare = cols * rows - count;
+          const w = cols * unitW;
+          const h = rows * unitH;
+          const ratio = Math.max(w, h) / Math.max(1, Math.min(w, h));
+          layouts.push({ cols, rows, spare, w, h, ratio });
+        }
+        const unique = [];
+        const seen = new Set();
+        for (const layout of layouts) {
+          const sig = `${layout.cols}x${layout.rows}`;
+          if (seen.has(sig)) continue;
+          seen.add(sig);
+          unique.push(layout);
+        }
+        unique.sort((a, b) => (b.hinted ? 1 : 0) - (a.hinted ? 1 : 0) || a.spare - b.spare || a.ratio - b.ratio || a.w - b.w);
+        return unique.slice(0, 12);
+      }
+
+      function moduleOptions(cluster) {
+        const building = cluster.parts.find(p => p.kind === 'building');
+        const fields = cluster.parts.filter(p => p.kind === 'field');
+        if (!building) return [];
+
+        if (!fields.length) {
+          return [{
+            w: building.w,
+            h: building.h,
+            building: { ...building, x: 0, y: 0 },
+            fields: [],
+            score: building.w * building.h
+          }];
+        }
+
+        const first = fields[0];
+        const unitW = Math.max(1, first.w || 1);
+        const unitH = Math.max(1, first.h || 1);
+        const options = [];
+
+        for (const layout of compactLayouts(fields.length, unitW, unitH, first.id)) {
+          const w = Math.max(building.w, layout.w);
+          const h = building.h + layout.h;
+          const buildingX = Math.floor((w - building.w) / 2);
+          const fieldX = Math.floor((w - layout.w) / 2);
+          const moduleFields = [];
+
+          for (let n = 0; n < fields.length; n++) {
+            const cx = n % layout.cols;
+            const cy = Math.floor(n / layout.cols);
+            moduleFields.push({
+              ...first,
+              uid: uid(),
+              x: fieldX + cx * unitW,
+              y: building.h + cy * unitH,
+              w: unitW,
+              h: unitH,
+              kind: 'field'
+            });
+          }
+
+          const waste = (w * h) - (building.w * building.h) - (fields.length * unitW * unitH);
+          options.push({
+            w,
+            h,
+            building: { ...building, uid: uid(), x: buildingX, y: 0 },
+            fields: moduleFields,
+            score: waste * 10 + layout.ratio * 55 + Math.abs(w - h) * 1.5
+          });
+        }
+
+        options.sort((a, b) => a.score - b.score || a.h - b.h || a.w - b.w);
+        return options.slice(0, 6);
+      }
+
+      const modules = clusters
+        .map(cluster => ({ cluster, options: moduleOptions(cluster) }))
+        .filter(m => m.options.length)
+        .sort((a, b) => {
+          const aw = a.cluster.id.startsWith('infra_lagerhaus-') ? -1 : 0;
+          const bw = b.cluster.id.startsWith('infra_lagerhaus-') ? -1 : 0;
+          if (aw !== bw) return aw - bw;
+          const af = a.cluster.parts.filter(p => p.kind === 'field').length;
+          const bf = b.cluster.parts.filter(p => p.kind === 'field').length;
+          return bf - af || b.cluster.area - a.cluster.area;
+        });
+
+      if (!modules.length) return null;
+
+      const baseArea = modules.reduce((sum, m) => sum + Math.min(...m.options.map(o => o.w * o.h)), 0);
+      const ideal = Math.sqrt(baseArea);
+      const widths = [];
+      for (let w = Math.max(10, Math.floor(ideal * 0.75)); w <= Math.min(GRID_W, Math.ceil(ideal * 1.55) + 14); w++) widths.push(w);
+      widths.sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal));
+
+      const candidates = [];
+
+      for (const targetWidth of widths.slice(0, 48)) {
+        const rows = [];
+        let row = { modules: [], width: 1, height: 1 };
+
+        for (const mod of modules) {
+          const possible = mod.options
+            .map(option => {
+              const nextX = row.modules.length ? row.width + 1 : 1;
+              const nextWidth = nextX + option.w;
+              const nextHeight = Math.max(row.height, 1 + option.h);
+              return { option, nextX, nextWidth, nextHeight };
+            })
+            .filter(p => p.nextWidth <= targetWidth)
+            .sort((a, b) => Math.abs(targetWidth - a.nextWidth) - Math.abs(targetWidth - b.nextWidth) || a.nextHeight - b.nextHeight || a.option.score - b.option.score);
+
+          let picked = possible[0];
+          if (!picked && row.modules.length) {
+            rows.push(row);
+            row = { modules: [], width: 1, height: 1 };
+            picked = mod.options
+              .map(option => ({ option, nextX: 1, nextWidth: 1 + option.w, nextHeight: 1 + option.h }))
+              .filter(p => p.nextWidth <= targetWidth)
+              .sort((a, b) => a.nextHeight - b.nextHeight || a.option.score - b.option.score)[0];
+          }
+
+          if (!picked) {
+            row = null;
+            break;
+          }
+
+          row.modules.push({ option: picked.option, x: picked.nextX, y: 1 });
+          row.width = picked.nextWidth;
+          row.height = picked.nextHeight;
+        }
+
+        if (!row) continue;
+        if (row.modules.length) rows.push(row);
+
+        const width = Math.max(...rows.map(r => r.width));
+        const height = rows.reduce((sum, r) => sum + r.height, 0);
+        if (width > GRID_W || height > GRID_H) continue;
+
+        const out = [];
+        let y = 0;
+        for (const r of rows) {
+          for (let x = 0; x < width; x++) out.push({ uid: uid(), id: 'road_feldweg', name: 'Feldweg', x, y, w: 1, h: 1, color: '#665539', kind: 'road' });
+          for (const placed of r.modules) {
+            const option = placed.option;
+            out.push({ ...option.building, uid: uid(), x: placed.x + option.building.x, y: y + placed.y + option.building.y });
+          }
+          for (const placed of r.modules) {
+            const option = placed.option;
+            for (const field of option.fields) {
+              out.push({ ...field, uid: uid(), x: placed.x + field.x, y: y + placed.y + field.y });
+            }
+          }
+          y += r.height;
+        }
+        for (let yy = 0; yy < height; yy++) {
+          if (!out.some(it => it.kind === 'road' && it.x === 0 && it.y === yy)) {
+            out.push({ uid: uid(), id: 'road_feldweg', name: 'Feldweg', x: 0, y: yy, w: 1, h: 1, color: '#665539', kind: 'road' });
+          }
+        }
+
+        fillSolidPads(out, width, height);
+        if (!validateRoadRules(out)) continue;
+        if (!validateSolidRectangle(out, width, height)) continue;
+        candidates.push(scoreSolution(out, 'field-first'));
+      }
+
+      candidates.sort((a, b) => a.score - b.score);
+      return candidates[0] || null;
+    }
+
+    function packSolidRect(clusters, width, height, orderName, allowRotate) {
+      const list = clusters.map(c => ({ ...c, parts: c.parts.map(p => ({ ...p })) }));
+      if (orderName === 'height') list.sort((a, b) => b.h - a.h || b.area - a.area);
+      if (orderName === 'area') list.sort((a, b) => b.area - a.area || b.h - a.h);
+      if (orderName === 'wide') list.sort((a, b) => b.w - a.w || b.area - a.area);
+      if (orderName === 'narrow') list.sort((a, b) => a.w - b.w || b.area - a.area);
+      if (orderName === 'square') list.sort((a, b) => Math.abs(a.w - a.h) - Math.abs(b.w - b.h) || b.area - a.area);
+
+      const innerRight = width - 1;
+      const innerBottom = height - 1;
+      if (innerRight <= 1 || innerBottom <= 1) return null;
+
+      const placedClusters = [];
+      let freeRects = [{ x: 1, y: 1, w: width - 2, h: height - 2 }];
+
+      function cloneCluster(source) {
+        return { ...source, parts: source.parts.map(p => ({ ...p })) };
+      }
+
+      function variantsFor(source) {
+        const baseVariants = Array.isArray(source.variants) && source.variants.length
+          ? source.variants
+          : [source];
+        const variants = [];
+        const seen = new Set();
+
+        for (const baseVariant of baseVariants) {
+          const normal = {
+            ...source,
+            w: baseVariant.w,
+            h: baseVariant.h,
+            area: baseVariant.area || (baseVariant.w * baseVariant.h),
+            parts: baseVariant.parts.map(p => ({ ...p }))
+          };
+          const normalSig = `${normal.w}x${normal.h}:${normal.parts.map(p => `${p.id}@${p.x},${p.y},${p.w},${p.h}`).join('|')}`;
+          if (!seen.has(normalSig)) {
+            seen.add(normalSig);
+            variants.push(normal);
+          }
+
+          if (allowRotate && normal.w !== normal.h) {
+            const rotatedVariant = cloneCluster(normal);
+            rotateCluster(rotatedVariant);
+            const rotatedSig = `${rotatedVariant.w}x${rotatedVariant.h}:${rotatedVariant.parts.map(p => `${p.id}@${p.x},${p.y},${p.w},${p.h}`).join('|')}`;
+            if (!seen.has(rotatedSig)) {
+              seen.add(rotatedSig);
+              variants.push(rotatedVariant);
+            }
+          }
+        }
+
+        return variants
+          .filter(v => v.w <= width - 2 && v.h <= height - 2)
+          .sort((a, b) => {
+            const aw = Math.max(0, (a.w * a.h) - a.parts.reduce((sum, p) => sum + p.w * p.h, 0));
+            const bw = Math.max(0, (b.w * b.h) - b.parts.reduce((sum, p) => sum + p.w * p.h, 0));
+            const ar = Math.max(a.w, a.h) / Math.max(1, Math.min(a.w, a.h));
+            const br = Math.max(b.w, b.h) / Math.max(1, Math.min(b.w, b.h));
+            return aw - bw || ar - br || a.h - b.h || a.w - b.w;
+          });
+      }
+
+      function rectOverlap(a, b) {
+        return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+      }
+
+      function containsRect(a, b) {
+        return b.x >= a.x && b.y >= a.y && b.x + b.w <= a.x + a.w && b.y + b.h <= a.y + a.h;
+      }
+
+      function splitFreeRects(used) {
+        const next = [];
+        for (const fr of freeRects) {
+          if (!rectOverlap(fr, used)) {
+            next.push(fr);
+            continue;
+          }
+          if (used.x > fr.x) next.push({ x: fr.x, y: fr.y, w: used.x - fr.x, h: fr.h });
+          if (used.x + used.w < fr.x + fr.w) next.push({ x: used.x + used.w, y: fr.y, w: fr.x + fr.w - (used.x + used.w), h: fr.h });
+          if (used.y > fr.y) next.push({ x: fr.x, y: fr.y, w: fr.w, h: used.y - fr.y });
+          if (used.y + used.h < fr.y + fr.h) next.push({ x: fr.x, y: used.y + used.h, w: fr.w, h: fr.y + fr.h - (used.y + used.h) });
+        }
+
+        freeRects = next
+          .filter(r => r.w > 0 && r.h > 0)
+          .filter((r, idx, arr) => !arr.some((other, otherIdx) => otherIdx !== idx && containsRect(other, r)));
+      }
+
+      for (const original of list) {
+        const variants = variantsFor(original);
+        if (!variants.length) return null;
+
+        let best = null;
+        for (let frIndex = 0; frIndex < freeRects.length; frIndex++) {
+          const fr = freeRects[frIndex];
+          for (const variant of variants) {
+            if (variant.w > fr.w || variant.h > fr.h) continue;
+            const candidateRect = { x: fr.x, y: fr.y, w: variant.w, h: variant.h };
+            const alreadyPlaced = placedClusters.map(p => ({ x: p.x, y: p.y, w: p.cluster.w, h: p.cluster.h }));
+            const bb = boundingBox(alreadyPlaced.concat(candidateRect));
+            const ratio = bb ? Math.max(bb.w, bb.h) / Math.max(1, Math.min(bb.w, bb.h)) : 1;
+            const freeWaste = (fr.w * fr.h) - (variant.w * variant.h);
+            const edgePenalty = Math.min(candidateRect.x, width - (candidateRect.x + candidateRect.w)) + Math.min(candidateRect.y, height - (candidateRect.y + candidateRect.h));
+            const score = (bb?.area || 0) * 4 + ratio * 260 + freeWaste * 0.18 + edgePenalty * 0.35 + candidateRect.y * 0.2 + candidateRect.x * 0.05;
+            if (!best || score < best.score) {
+              best = { cluster: variant, x: fr.x, y: fr.y, score, rect: candidateRect, frIndex };
+            }
+          }
+        }
+
+        if (!best) return null;
+        placedClusters.push({ cluster: best.cluster, x: best.x, y: best.y });
+        splitFreeRects(best.rect);
+      }
+
+      const packed = [];
+      for (const pc of placedClusters) {
+        for (const p of pc.cluster.parts) {
+          packed.push({ ...p, x: pc.x + p.x, y: pc.y + p.y });
+        }
+      }
+
+      const roads = addRoadsInRect(packed, width, height);
+      if (!roads) return null;
+      const all = packed.concat(roads);
+      fillSolidPads(all, width, height);
+      const bbox = boundingBox(all);
+      if (!bbox || bbox.w !== width || bbox.h !== height) return null;
+      if (!validateRoadRules(all)) return null;
+      if (!validateSolidRectangle(all, width, height)) return null;
+      return scoreSolution(all, orderName + (allowRotate ? ' rot' : ''));
+    }
+
+    function rotateCluster(c) {
+      const oldW = c.w;
+      const oldH = c.h;
+      for (const p of c.parts) {
+        const nx = oldH - (p.y + p.h);
+        const ny = p.x;
+        const nw = p.h;
+        const nh = p.w;
+        p.x = nx; p.y = ny; p.w = nw; p.h = nh;
+      }
+      c.w = oldH;
+      c.h = oldW;
+    }
+
+    function normalize(list) {
+      const bb = boundingBox(list);
+      if (!bb) return;
+      for (const it of list) {
+        it.x -= bb.minX;
+        it.y -= bb.minY;
+      }
+    }
+
+    function addRoadsInRect(list, width, height) {
+      const key = (x, y) => x + ',' + y;
+      const parse = value => {
+        const comma = value.indexOf(',');
+        return { x: Number(value.slice(0, comma)), y: Number(value.slice(comma + 1)) };
+      };
+      const inGrid = (x, y) => x >= 0 && y >= 0 && x < width && y < height;
+      const blocked = new Set();
+
+      for (const it of list) {
+        for (let y = it.y; y < it.y + it.h; y++) {
+          for (let x = it.x; x < it.x + it.w; x++) blocked.add(key(x, y));
+        }
+      }
+
+      function anchorsFor(rect) {
+        const anchors = [];
+        for (let x = rect.x; x < rect.x + rect.w; x++) {
+          anchors.push({ x, y: rect.y - 1 });
+          anchors.push({ x, y: rect.y + rect.h });
+        }
+        for (let y = rect.y; y < rect.y + rect.h; y++) {
+          anchors.push({ x: rect.x - 1, y });
+          anchors.push({ x: rect.x + rect.w, y });
+        }
+        const seen = new Set();
+        return anchors.filter(p => {
+          const k = key(p.x, p.y);
+          if (!inGrid(p.x, p.y) || blocked.has(k) || seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+      }
+
+      function findPathToTargets(roadSet, targetSet) {
+        const queue = [];
+        const parent = new Map();
+        for (const start of roadSet) {
+          if (parent.has(start)) continue;
+          parent.set(start, null);
+          queue.push(start);
+        }
+
+        let hit = null;
+        for (let i = 0; i < queue.length; i++) {
+          const cur = queue[i];
+          if (targetSet.has(cur)) {
+            hit = cur;
+            break;
+          }
+          const p = parse(cur);
+          const next = [
+            { x: p.x - 1, y: p.y },
+            { x: p.x + 1, y: p.y },
+            { x: p.x, y: p.y - 1 },
+            { x: p.x, y: p.y + 1 },
+          ];
+          for (const n of next) {
+            const nk = key(n.x, n.y);
+            if (!inGrid(n.x, n.y) || parent.has(nk) || blocked.has(nk)) continue;
+            parent.set(nk, cur);
+            queue.push(nk);
+          }
+        }
+
+        if (!hit) return null;
+        const path = [];
+        for (let cur = hit; cur; cur = parent.get(cur)) path.push(cur);
+        path.reverse();
+        return path;
+      }
+
+      const buildings = list.filter(it => it.kind === 'building');
+      if (!buildings.length) return [];
+      const warehouse = buildings.find(it => it.id === 'infra_lagerhaus') || buildings[0];
+      const warehouseAnchors = anchorsFor(warehouse);
+      if (!warehouseAnchors.length) return null;
+
+      warehouseAnchors.sort((a, b) => (a.y - b.y) || (a.x - b.x));
+      const roadSet = new Set([key(warehouseAnchors[0].x, warehouseAnchors[0].y)]);
+      const ordered = buildings
+        .filter(it => it !== warehouse)
+        .sort((a, b) => {
+          const da = Math.abs((a.x + a.w / 2) - (warehouse.x + warehouse.w / 2)) + Math.abs((a.y + a.h / 2) - (warehouse.y + warehouse.h / 2));
+          const db = Math.abs((b.x + b.w / 2) - (warehouse.x + warehouse.w / 2)) + Math.abs((b.y + b.h / 2) - (warehouse.y + warehouse.h / 2));
+          return da - db;
+        });
+
+      for (const building of ordered) {
+        const targetSet = new Set(anchorsFor(building).map(p => key(p.x, p.y)));
+        if (!targetSet.size) return null;
+        let connected = false;
+        for (const target of targetSet) {
+          if (roadSet.has(target)) {
+            connected = true;
+            break;
+          }
+        }
+        if (!connected) {
+          const path = findPathToTargets(roadSet, targetSet);
+          if (!path) return null;
+          for (const p of path) roadSet.add(p);
+        }
+      }
+
+      const edgeTargets = new Set();
+      for (let x = 0; x < width; x++) {
+        if (!blocked.has(key(x, 0))) edgeTargets.add(key(x, 0));
+        if (!blocked.has(key(x, height - 1))) edgeTargets.add(key(x, height - 1));
+      }
+      for (let y = 0; y < height; y++) {
+        if (!blocked.has(key(0, y))) edgeTargets.add(key(0, y));
+        if (!blocked.has(key(width - 1, y))) edgeTargets.add(key(width - 1, y));
+      }
+      const touchesEdge = [...roadSet].some(k => edgeTargets.has(k));
+      if (!touchesEdge) {
+        const edgePath = findPathToTargets(roadSet, edgeTargets);
+        if (!edgePath) return null;
+        for (const p of edgePath) roadSet.add(p);
+      }
+
+      return [...roadSet].map(k => {
+        const p = parse(k);
+        return { uid: uid(), id: 'road_feldweg', name: 'Feldweg', x: p.x, y: p.y, w: 1, h: 1, color: '#665539', kind: 'road' };
+      });
+    }
+
+    function fillSolidPads(list, width, height) {
+      const occupied = new Set();
+      const key = (x, y) => x + ',' + y;
+      for (const it of list) {
+        for (let y = it.y; y < it.y + it.h; y++) {
+          for (let x = it.x; x < it.x + it.w; x++) occupied.add(key(x, y));
+        }
+      }
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const k = key(x, y);
+          if (occupied.has(k)) continue;
+          occupied.add(k);
+          list.push({ uid: uid(), id: 'infra_platz', name: 'Platz', x, y, w: 1, h: 1, color: '#202527', kind: 'pad' });
+        }
+      }
+    }
+
+    function validateSolidRectangle(list, width, height) {
+      const occupied = new Set();
+      const key = (x, y) => x + ',' + y;
+      for (const it of list) {
+        if (it.x < 0 || it.y < 0 || it.x + it.w > width || it.y + it.h > height) return false;
+        for (let y = it.y; y < it.y + it.h; y++) {
+          for (let x = it.x; x < it.x + it.w; x++) {
+            const k = key(x, y);
+            if (occupied.has(k)) return false;
+            occupied.add(k);
+          }
+        }
+      }
+      return occupied.size === width * height;
+    }
+
+    function validateRoadRules(list) {
+      const buildings = list.filter(it => it.kind === 'building');
+      if (!buildings.length) return true;
+      const warehouse = buildings.find(it => it.id === 'infra_lagerhaus');
+      if (!warehouse) return false;
+
+      const roads = list.filter(it => it.kind === 'road');
+      if (!roads.length) return false;
+      const bb = boundingBox(list);
+      if (!bb) return false;
+      const key = (x, y) => x + ',' + y;
+      const parse = value => {
+        const comma = value.indexOf(',');
+        return { x: Number(value.slice(0, comma)), y: Number(value.slice(comma + 1)) };
+      };
+      const roadSet = new Set(roads.map(r => key(r.x, r.y)));
+      const touchesEdge = roads.some(r => r.x === bb.minX || r.y === bb.minY || r.x + r.w === bb.maxX || r.y + r.h === bb.maxY);
+      if (!touchesEdge) return false;
+
+      function adjacentRoadKeys(rect) {
+        const keys = [];
+        for (let x = rect.x; x < rect.x + rect.w; x++) {
+          keys.push(key(x, rect.y - 1), key(x, rect.y + rect.h));
+        }
+        for (let y = rect.y; y < rect.y + rect.h; y++) {
+          keys.push(key(rect.x - 1, y), key(rect.x + rect.w, y));
+        }
+        return keys.filter(k => roadSet.has(k));
+      }
+
+      const warehouseRoads = adjacentRoadKeys(warehouse);
+      if (!warehouseRoads.length) return false;
+
+      const seen = new Set([warehouseRoads[0]]);
+      const queue = [warehouseRoads[0]];
+      for (let i = 0; i < queue.length; i++) {
+        const p = parse(queue[i]);
+        const next = [
+          key(p.x - 1, p.y),
+          key(p.x + 1, p.y),
+          key(p.x, p.y - 1),
+          key(p.x, p.y + 1),
+        ];
+        for (const nk of next) {
+          if (!roadSet.has(nk) || seen.has(nk)) continue;
+          seen.add(nk);
+          queue.push(nk);
+        }
+      }
+
+      for (const building of buildings) {
+        const adjacent = adjacentRoadKeys(building);
+        if (!adjacent.some(k => seen.has(k))) return false;
+      }
+      return true;
+    }
+
+    function scoreSolution(list, tag) {
+      const bb = boundingBox(list);
+      const fields = list.filter(it => it.kind === 'field').reduce((s, it) => s + it.w * it.h, 0);
+      const pads = list.filter(it => it.kind === 'pad').length;
+      const roads = list.filter(it => it.kind === 'road').length;
+      const buildings = list.filter(it => it.kind === 'building').length;
+      const occupied = list.reduce((sum, it) => sum + it.w * it.h, 0);
+      const empty = Math.max(0, bb.area - occupied);
+      const ratio = Math.max(bb.w, bb.h) / Math.max(1, Math.min(bb.w, bb.h));
+      const tagText = String(tag);
+      const strategyWeight = Object.entries(STRATEGY_WEIGHTS).reduce((sum, [name, weight]) => tagText.includes(name) ? sum + weight : sum, 0);
+      const longRoadPenalty = roads > 0 ? Math.max(0, roads - Math.ceil(bb.area * 0.08)) * 12 : 0;
+      const fillerPenalty = Math.max(0, pads - Math.ceil(bb.area * 0.32)) * 5;
+      const score = bb.area * 12 + ratio * 620 + pads * 1.5 + roads * 7 + empty * 30 + fields * 0.05 + longRoadPenalty + fillerPenalty + strategyWeight;
+      return { items: list.map(it => ({ ...it })), bbox: bb, area: bb.area, score, ratio, fields, pads, roads, buildings, tag };
+    }
+
+    function buildRectCandidates(clusters) {
+      const requiredArea = clusters.reduce((sum, c) => sum + c.area, 0);
+      const maxBlockSide = clusters.reduce((max, c) => Math.max(max, Math.min(c.w, c.h)), 0);
+      const candidates = [];
+
+      for (let w = Math.max(8, maxBlockSide + 2); w <= GRID_W; w++) {
+        for (let h = Math.max(8, maxBlockSide + 2); h <= GRID_H; h++) {
+          const area = w * h;
+          if (area < requiredArea) continue;
+          if (area > requiredArea * 2.2 + 420) continue;
+          const ratio = Math.max(w, h) / Math.max(1, Math.min(w, h));
+          candidates.push({ w, h, area, ratio });
+        }
+      }
+
+      candidates.sort((a, b) => a.area - b.area || a.ratio - b.ratio || a.w - b.w);
+      return candidates.slice(0, 140);
+    }
+
+    function taskSignature(countMap) {
+      return CATALOG
+        .filter(b => b.kind !== 'road')
+        .map(b => [b.id, countMap[b.id] || 0])
+        .filter(([, n]) => n > 0)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([id, n]) => `${id}=${n}`)
+        .join(';');
+    }
+
+    function loadLearningMemory() {
+      try {
+        const raw = localStorage.getItem(LEARN_STORAGE_KEY);
+        if (!raw) return { version: 1, tasks: {}, global: { tags: {}, bestByTag: {} }, runs: [] };
+        const parsed = JSON.parse(raw);
+        return {
+          version: 1,
+          tasks: parsed.tasks && typeof parsed.tasks === 'object' ? parsed.tasks : {},
+          global: parsed.global && typeof parsed.global === 'object' ? parsed.global : { tags: {}, bestByTag: {} },
+          runs: Array.isArray(parsed.runs) ? parsed.runs : [],
+        };
+      } catch {
+        return { version: 1, tasks: {}, global: { tags: {}, bestByTag: {} }, runs: [] };
+      }
+    }
+
+    function saveLearningMemory(memory) {
+      localStorage.setItem(LEARN_STORAGE_KEY, JSON.stringify(memory));
+    }
+
+    function exportLearningMemory() {
+      const memory = loadLearningMemory();
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        app: 'ANNO_117_Optimizer_Neu',
+        key: LEARN_STORAGE_KEY,
+        taskCount: Object.keys(memory.tasks || {}).length,
+        runCount: Array.isArray(memory.runs) ? memory.runs.length : 0,
+        memory,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      a.href = url;
+      a.download = `anno117-learning-memory-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+      setStatus(`Learning Memory exportiert: ${payload.taskCount} Aufgaben.`, 100);
+    }
+
+    function solutionSummary(sol, countMap) {
+      return {
+        tag: sol.tag,
+        score: Math.round(sol.score * 100) / 100,
+        bbox: { w: sol.bbox.w, h: sol.bbox.h, area: sol.bbox.area },
+        ratio: Math.round(sol.ratio * 1000) / 1000,
+        fields: sol.fields,
+        roads: sol.roads,
+        pads: sol.pads,
+        buildings: sol.buildings,
+        counts: Object.fromEntries(Object.entries(countMap).filter(([, n]) => n > 0)),
+        ts: new Date().toISOString(),
+      };
+    }
+
+    function rememberLearningResult(memory, signature, countMap, results) {
+      if (!results.length) return;
+      results.sort((a, b) => a.score - b.score);
+      const summaries = results.slice(0, 5).map(sol => solutionSummary(sol, countMap));
+      const previous = memory.tasks[signature]?.candidates || [];
+      const combined = previous.concat(summaries)
+        .sort((a, b) => a.score - b.score)
+        .filter((entry, idx, arr) => idx === arr.findIndex(other => other.tag === entry.tag && other.bbox.w === entry.bbox.w && other.bbox.h === entry.bbox.h))
+        .slice(0, 8);
+
+      memory.tasks[signature] = {
+        signature,
+        best: combined[0],
+        candidates: combined,
+        updatedAt: new Date().toISOString(),
+      };
+
+      memory.global.tags ||= {};
+      memory.global.bestByTag ||= {};
+      for (const entry of combined.slice(0, 3)) {
+        memory.global.tags[entry.tag] = (memory.global.tags[entry.tag] || 0) + 1;
+        const current = memory.global.bestByTag[entry.tag];
+        if (!current || entry.score < current.score) memory.global.bestByTag[entry.tag] = entry;
+      }
+    }
+
+    function evaluateFastStrategies(clusters) {
+      const results = [];
+      const add = sol => {
+        if (!sol) return;
+        if (results.some(s => s.tag === sol.tag && s.bbox.w === sol.bbox.w && s.bbox.h === sol.bbox.h)) return;
+        results.push(sol);
+      };
+      add(buildFieldFirstRowsLayout(clusters));
+      add(buildFieldReservationLayout(clusters));
+      add(buildRoadFirstLayout(clusters));
+      if (!results.length) add(buildSpineFallback(clusters));
+      results.sort((a, b) => a.score - b.score);
+      return results;
+    }
+
+    function drawLearningPreview(sol) {
+      drawSolutionToCanvas(learnPreview, sol);
+    }
+
+    function updateLearningLog(lines) {
+      if (!learnLog) return;
+      learnLog.textContent = lines.filter(Boolean).slice(-5).join('\n');
+    }
+
+    function createLearningTasks(taskCount = 500) {
+      const production = CATALOG.filter(b => b.kind !== 'road' && b.id !== 'infra_lagerhaus');
+      const tasks = [];
+      const seen = new Set();
+      let seed = 117117;
+      const rnd = () => {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        return seed / 4294967296;
+      };
+
+      function addTask(map) {
+        map.infra_lagerhaus = Math.max(1, map.infra_lagerhaus || 1);
+        const sig = taskSignature(map);
+        if (!sig || seen.has(sig)) return;
+        seen.add(sig);
+        tasks.push({ ...map });
+      }
+
+      for (let wheat = 1; wheat <= 8; wheat++) {
+        for (let bakery = 0; bakery <= 4; bakery++) {
+          addTask({ need_brot_weizenhof: wheat, need_brot_baeckerei: bakery });
+        }
+      }
+
+      for (let pig = 1; pig <= 5; pig++) {
+        for (let tannery = 0; tannery <= 3; tannery++) {
+          for (let sandal = 0; sandal <= 3; sandal++) addTask({ need_sandalen_schweinehof: pig, need_sandalen_gerberei: tannery, need_sandalen_sandalenmacher: sandal });
+        }
+      }
+
+      for (let i = 0; i < taskCount * 4 && tasks.length < taskCount; i++) {
+        const map = {};
+        const pickCount = 1 + Math.floor(rnd() * Math.min(5, production.length));
+        const shuffled = production.slice().sort(() => rnd() - 0.5);
+        let fieldBudget = 0;
+        for (const b of shuffled.slice(0, pickCount)) {
+          const max = b.fields ? 4 : 5;
+          const n = 1 + Math.floor(rnd() * max);
+          const fieldAdd = b.fields ? (b.fields.count * n * (b.fields.unitW || 1) * (b.fields.unitH || 1)) : 0;
+          if (fieldBudget + fieldAdd > 900) continue;
+          fieldBudget += fieldAdd;
+          map[b.id] = n;
+        }
+        addTask(map);
+      }
+
+      return tasks.slice(0, taskCount);
+    }
+
+    async function runLearningMode(taskCount = 500) {
+      cancelLearning = false;
+      cancelOptimize = false;
+      document.getElementById('cancelBtn').disabled = false;
+      const memory = loadLearningMemory();
+      const tasks = createLearningTasks(taskCount);
+      let solved = 0;
+      let stored = 0;
+      const logLines = [];
+
+      setStatus(`Learning Mode startet: ${tasks.length} Aufgaben`, 0);
+      setOptimizeStatus({ rect: null, mode: 'Learning', hits: 0, best: null });
+      drawLearningPreview(null);
+      updateLearningLog([`Start: ${tasks.length} Durchlaeufe`]);
+      await tick();
+
+      for (let i = 0; i < tasks.length; i++) {
+        if (cancelLearning || cancelOptimize) break;
+        const countMap = tasks[i];
+        const signature = taskSignature(countMap);
+        const clusters = clustersFromCounts(countMap);
+        const results = evaluateFastStrategies(clusters);
+        if (results.length) {
+          solved++;
+          stored += results.length;
+          rememberLearningResult(memory, signature, countMap, results);
+          drawLearningPreview(results[0]);
+          logLines.push(`#${i + 1} ok ${results[0].bbox.w}x${results[0].bbox.h} ${results[0].tag}`);
+          setOptimizeStatus({ rect: results[0].bbox, mode: `Learn ${i + 1}/${tasks.length}`, hits: solved, best: results[0] });
+        } else {
+          logLines.push(`#${i + 1} kein Treffer`);
+          setOptimizeStatus({ rect: null, mode: `Learn ${i + 1}/${tasks.length}`, hits: solved, best: null });
+        }
+
+        if (i % 10 === 0) saveLearningMemory(memory);
+        if (i % 3 === 0) {
+          setStatus(`Learning ${i + 1}/${tasks.length} | geloest ${solved} | gespeichert ${stored}`, ((i + 1) / tasks.length) * 100);
+          updateLearningLog(logLines);
+          await tick();
+        }
+      }
+
+      memory.runs.push({ ts: new Date().toISOString(), tasks: tasks.length, solved, stored });
+      memory.runs = memory.runs.slice(-20);
+      saveLearningMemory(memory);
+      document.getElementById('cancelBtn').disabled = true;
+
+      if (cancelLearning || cancelOptimize) {
+        setStatus(`Learning abgebrochen | geloest ${solved}/${tasks.length}`, 0);
+        setOptimizeStatus({ mode: 'Learning Stop', hits: solved, best: null });
+        updateLearningLog(logLines.concat(`Stop bei ${solved}/${tasks.length}`));
+        return;
+      }
+
+      setStatus(`Learning fertig | geloest ${solved}/${tasks.length} | Memory ${Object.keys(memory.tasks).length} Aufgaben`, 100);
+      setOptimizeStatus({ mode: 'Learning fertig', hits: solved, best: null });
+      updateLearningLog(logLines.concat(`Fertig: ${solved}/${tasks.length} geloest`));
+    }
+
+    async function optimize() {
+      const clusters = expandCounts();
+      if (!clusters.length) {
+        setStatus('Bitte zuerst links mit + mindestens ein Gebaeude zaehlen.', 0);
+        setOptimizeStatus({ rect: null, mode: 'Keine Menge', hits: 0, best: null });
+        return;
+      }
+
+      cancelOptimize = false;
+      document.getElementById('cancelBtn').disabled = false;
+      setOptimizerRunning(true);
+      setStatus('Optimizer startet...', 0);
+      setOptimizeStatus({ rect: null, mode: 'Start', hits: 0, best: null });
+      updateOptLive('Start...\nMengen werden analysiert.');
+      await tick();
+
+      const candidates = buildRectCandidates(clusters);
+      const orders = ['area', 'square', 'height', 'wide'];
+      const solutions = [];
+      let tries = 0;
+      const totalTries = Math.max(1, candidates.length * orders.length * 2);
+
+      setStatus('Berechne Feldbedarf und puzzle Gebaeude...', 2);
+      setOptimizeStatus({ rect: null, mode: 'Field-First', hits: 0, best: null });
+      updateOptLive('Field-First\nFeldbedarf wird in kompakte Module uebersetzt.');
+      await tick();
+      const fieldFirst = buildFieldFirstRowsLayout(clusters);
+      if (fieldFirst) {
+        solutions.push(fieldFirst);
+        setOptimizeStatus({ rect: fieldFirst.bbox, mode: 'Field-First', hits: solutions.length, best: fieldFirst });
+        updateOptLive(`Field-First Treffer\n${fieldFirst.bbox.w}x${fieldFirst.bbox.h} | Score ${Math.round(fieldFirst.score)}`, fieldFirst);
+      }
+
+      setStatus('Reserviere Felder und puzzle Gebaeude...', 3);
+      setOptimizeStatus({ rect: null, mode: 'Feld-Reservierung', hits: solutions.length, best: solutions[0] || null });
+      updateOptLive('Feld-Reservierung\nTeste alternative Reservierungsformen.', solutions[0] || null);
+      await tick();
+      const fieldReservation = buildFieldReservationLayout(clusters);
+      if (fieldReservation) {
+        solutions.push(fieldReservation);
+        solutions.sort((a, b) => a.score - b.score);
+        solutions.splice(10);
+        setOptimizeStatus({ rect: fieldReservation.bbox, mode: 'Feld-Reservierung', hits: solutions.length, best: fieldReservation });
+        updateOptLive(`Feld-Reservierung Treffer\n${fieldReservation.bbox.w}x${fieldReservation.bbox.h} | Beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}`, solutions[0]);
+      }
+
+      setStatus('Baue Road-First Layout...', 4);
+      setOptimizeStatus({ rect: null, mode: 'Road-First', hits: solutions.length, best: solutions[0] || null });
+      updateOptLive('Road-First\nStraßengeruest wird getestet.', solutions[0] || null);
+      await tick();
+      const roadFirst = buildRoadFirstLayout(clusters);
+      if (roadFirst) {
+        solutions.push(roadFirst);
+        solutions.sort((a, b) => a.score - b.score);
+        solutions.splice(10);
+        setOptimizeStatus({ rect: roadFirst.bbox, mode: 'Road-First', hits: solutions.length, best: roadFirst });
+        updateOptLive(`Road-First Treffer\n${roadFirst.bbox.w}x${roadFirst.bbox.h} | Beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}`, solutions[0]);
+      }
+
+      searchRects:
+      for (const rect of candidates) {
+        if (solutions.length >= 8 && rect.area > solutions[0].area + Math.max(80, solutions[0].area * 0.12)) break;
+        for (const order of orders) {
+          for (const rot of [false, true]) {
+            if (cancelOptimize) break searchRects;
+            const mode = `${order}${rot ? ' rot' : ''}`;
+            setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
+            if (tries % 4 === 0) updateOptLive(`Constraint-Suche\n${rect.w}x${rect.h} | ${mode}\nTreffer: ${solutions.length}`, solutions[0] || null);
+            const sol = packExactRect(clusters, rect.w, rect.h, order, rot);
+            if (sol) {
+              const duplicate = solutions.some(s => s.bbox.w === sol.bbox.w && s.bbox.h === sol.bbox.h && Math.abs(s.score - sol.score) < 0.01);
+              if (!duplicate) solutions.push(sol);
+              solutions.sort((a, b) => a.score - b.score);
+              solutions.splice(10);
+              setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
+              updateOptLive(`Neuer Kandidat\n${sol.bbox.w}x${sol.bbox.h} | ${sol.tag}`, solutions[0]);
+            }
+            tries++;
+            if (tries % 4 === 0) {
+              const bestText = solutions[0] ? ` | beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}` : '';
+              setStatus(`Constraint-Suche ${tries}/${totalTries}${bestText}`, tries / totalTries * 100);
+              await tick();
+            }
+          }
+        }
+      }
+
+      document.getElementById('cancelBtn').disabled = true;
+      if (cancelOptimize) {
+        setStatus('Optimizer abgebrochen.', 0);
+        setOptimizeStatus({ mode: 'Abbruch', hits: solutions.length, best: solutions[0] || null });
+        updateOptLive('Abgebrochen.', solutions[0] || null);
+        setOptimizerRunning(false);
+        return;
+      }
+
+      if (!solutions.length) {
+        document.getElementById('cancelBtn').disabled = false;
+        setStatus('Constraint-Suche ohne Treffer, starte Ersatzsuche...', 0);
+        setOptimizeStatus({ rect: null, mode: 'Fallback', hits: 0, best: null });
+        updateOptLive('Ersatzsuche\nNoch kein valider Kandidat.', null);
+        await tick();
+
+        let fallbackTries = 0;
+        const fallbackCandidates = candidates.slice(0, 80);
+        const fallbackTotal = Math.max(1, fallbackCandidates.length * orders.length * 2);
+        fallbackRects:
+        for (const rect of fallbackCandidates) {
+          for (const order of orders) {
+            for (const rot of [false, true]) {
+              if (cancelOptimize) break fallbackRects;
+              const mode = `fallback ${order}${rot ? ' rot' : ''}`;
+              setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
+              if (fallbackTries % 4 === 0) updateOptLive(`Ersatzsuche\n${rect.w}x${rect.h} | ${mode}`, solutions[0] || null);
+              const sol = packSolidRect(clusters, rect.w, rect.h, order, rot);
+              if (sol) {
+                sol.tag = `fallback ${sol.tag}`;
+                const duplicate = solutions.some(s => s.bbox.w === sol.bbox.w && s.bbox.h === sol.bbox.h && Math.abs(s.score - sol.score) < 0.01);
+                if (!duplicate) solutions.push(sol);
+                solutions.sort((a, b) => a.score - b.score);
+                solutions.splice(10);
+                setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
+                updateOptLive(`Fallback Treffer\n${sol.bbox.w}x${sol.bbox.h}`, solutions[0]);
+              }
+              fallbackTries++;
+              if (fallbackTries % 4 === 0) {
+                const bestText = solutions[0] ? ` | beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}` : '';
+                setStatus(`Ersatzsuche ${fallbackTries}/${fallbackTotal}${bestText}`, fallbackTries / fallbackTotal * 100);
+                await tick();
+              }
+            }
+          }
+        }
+        document.getElementById('cancelBtn').disabled = true;
+      }
+
+      if (cancelOptimize) {
+        setStatus('Optimizer abgebrochen.', 0);
+        setOptimizeStatus({ mode: 'Abbruch', hits: solutions.length, best: solutions[0] || null });
+        document.getElementById('cancelBtn').disabled = true;
+        updateOptLive('Abgebrochen.', solutions[0] || null);
+        setOptimizerRunning(false);
+        return;
+      }
+
+      if (!solutions.length) {
+        setStatus('Keine Solver-Loesung, baue Basislayout...', 0);
+        setOptimizeStatus({ rect: null, mode: 'Basislayout', hits: 0, best: null });
+        updateOptLive('Basislayout\nLetzte Sicherheitsstrategie.', null);
+        await tick();
+        const base = buildSpineFallback(clusters);
+        if (base) {
+          solutions.push(base);
+          setOptimizeStatus({ rect: base.bbox, mode: 'Basislayout', hits: 1, best: base });
+          updateOptLive(`Basislayout Treffer\n${base.bbox.w}x${base.bbox.h}`, base);
+        } else {
+          setStatus('Keine Loesung fuer das 80x80 Raster gefunden.', 0);
+          setOptimizeStatus({ mode: 'Keine Treffer', hits: 0, best: null });
+          updateOptLive('Keine Loesung gefunden.', null);
+          setOptimizerRunning(false);
+          return;
+        }
+      }
+      setStatus(`Fertig. Beste Loesung: ${solutions[0].bbox.w}x${solutions[0].bbox.h}.`, 100);
+      setOptimizeStatus({ rect: solutions[0].bbox, mode: 'Fertig', hits: solutions.length, best: solutions[0] });
+      updateOptLive(`Fertig\nBeste: ${solutions[0].bbox.w}x${solutions[0].bbox.h}\n${solutions[0].tag}`, solutions[0]);
+      applySolution(solutions[0]);
+      showSolutions(solutions);
+      setOptimizerRunning(false);
+    }
+
+    function applySolution(sol) {
+      if (!sol || !Array.isArray(sol.items)) return;
+      items = sol.items.map(it => ({ ...it, uid: uid() }));
+      render();
+      setStatus(`Layout angewendet: ${sol.bbox.w}x${sol.bbox.h}.`, 100);
+      setOptimizeStatus({ rect: sol.bbox, mode: 'Angewendet', hits: Number(statusHits?.textContent) || 1, best: sol });
+    }
+
+    function showSolutions(solutions) {
+      solutionGrid.innerHTML = '';
+      for (const [index, sol] of solutions.entries()) {
+        const card = document.createElement('div');
+        card.className = 'solution';
+        const canvas = drawMini(sol);
+        card.appendChild(canvas);
+        const info = document.createElement('div');
+        info.innerHTML = `<strong>#${index + 1} ${sol.bbox.w}x${sol.bbox.h}</strong><div class="meta">voll belegt | Verhaeltnis ${sol.ratio.toFixed(2)} | Gebaeude ${sol.buildings} | Felder ${sol.fields} | Strassen ${sol.roads} | Platz ${sol.pads} | ${sol.tag}</div>`;
+        card.appendChild(info);
+        card.addEventListener('click', () => {
+          applySolution(sol);
+          resultsEl.style.display = 'none';
+        });
+        solutionGrid.appendChild(card);
+      }
+      resultsEl.style.display = 'flex';
+    }
+
+    function drawMini(sol) {
+      const canvas = document.createElement('canvas');
+      canvas.className = 'mini';
+      canvas.width = Math.max(1, sol.bbox.w);
+      canvas.height = Math.max(1, sol.bbox.h);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#151413';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const order = { pad: 0, field: 1, road: 2, building: 3 };
+      for (const it of sol.items.slice().sort((a, b) => (order[a.kind] || 0) - (order[b.kind] || 0))) {
+        ctx.fillStyle = it.color || '#777';
+        ctx.fillRect(it.x, it.y, it.w, it.h);
+      }
+      return canvas;
+    }
+
+    function statePayload() {
+      return { version: 1, counts, items, selectedId, rotated };
+    }
+
+    function applyPayload(payload) {
+      if (!payload || typeof payload !== 'object') return;
+      counts = { ...Object.fromEntries(CATALOG.map(b => [b.id, 0])), ...(payload.counts || {}) };
+      for (const [id, n] of Object.entries(counts)) {
+        const input = document.getElementById('count-' + id);
+        if (input) input.value = Math.max(0, Math.floor(Number(n) || 0));
+        markCountState(id);
+      }
+      items = Array.isArray(payload.items) ? payload.items.filter(it => Number.isFinite(it.x) && Number.isFinite(it.y)).map(it => ({ ...it, uid: it.uid || uid() })) : [];
+      rotated = !!payload.rotated;
+      selectTool(payload.selectedId && byId(payload.selectedId) ? payload.selectedId : selectedId);
+      render();
+    }
+
+    function exportJson() {
+      const blob = new Blob([JSON.stringify(statePayload(), null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'anno117-planer-neu.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    }
+
+    mapEl.addEventListener('mousemove', e => {
+      if (!selectedId) return;
+      const rect = mapEl.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / CELL);
+      const y = Math.floor((e.clientY - rect.top) / CELL);
+      const b = byId(selectedId);
+      const d = dims(b);
+      ghostEl.style.setProperty('--x', x);
+      ghostEl.style.setProperty('--y', y);
+      ghostEl.style.setProperty('--w', d.w);
+      ghostEl.style.setProperty('--h', d.h);
+      ghostEl.style.display = canPlace(x, y, d.w, d.h) ? 'block' : 'none';
+    });
+
+    mapEl.addEventListener('mouseleave', () => ghostEl.style.display = 'none');
+    mapEl.addEventListener('contextmenu', e => e.preventDefault());
+    mapEl.addEventListener('mousedown', e => {
+      const rect = mapEl.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / CELL);
+      const y = Math.floor((e.clientY - rect.top) / CELL);
+      if (e.button === 2) removeAt(x, y);
+      else placeManual(x, y);
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key.toLowerCase() === 'r') {
+        rotated = !rotated;
+        selectTool(selectedId);
+      }
+      if (e.key === 'Escape') {
+        cancelOptimize = true;
+        cancelLearning = true;
+        resultsEl.style.display = 'none';
+      }
+    });
+
+    document.getElementById('rotateBtn').addEventListener('click', () => {
+      rotated = !rotated;
+      selectTool(selectedId);
+    });
+    searchInput.addEventListener('input', filterCatalog);
+    document.getElementById('optimizeBtn').addEventListener('click', () => {
+      optimize().catch(err => {
+        const message = err?.message || String(err);
+        console.error(err);
+        cancelOptimize = true;
+        setOptimizerRunning(false);
+        document.getElementById('cancelBtn').disabled = true;
+        setStatus(`Optimizer Fehler: ${message}`, 0);
+        updateOptLive(`Fehler beim Optimieren\n${message}`, null);
+      });
+    });
+    document.getElementById('learnBtn').addEventListener('click', () => {
+      const requested = Math.floor(Number(learnCountInput?.value) || 500);
+      const runs = Math.max(10, Math.min(5000, requested));
+      if (learnCountInput) learnCountInput.value = String(runs);
+      runLearningMode(runs);
+    });
+    document.getElementById('learnExportBtn').addEventListener('click', exportLearningMemory);
+    document.getElementById('cancelBtn').addEventListener('click', () => {
+      cancelOptimize = true;
+      cancelLearning = true;
+    });
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      if (!confirm('Karte wirklich leeren?')) return;
+      items = [];
+      render();
+      setStatus('Karte geleert.', 0);
+    });
+    document.getElementById('saveBtn').addEventListener('click', () => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(statePayload()));
+      setStatus('Gespeichert.', 100);
+    });
+    document.getElementById('loadBtn').addEventListener('click', () => {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return setStatus('Kein Speicherstand gefunden.', 0);
+      try { applyPayload(JSON.parse(raw)); setStatus('Geladen.', 100); }
+      catch { setStatus('Speicherstand ist beschaedigt.', 0); }
+    });
+    document.getElementById('exportBtn').addEventListener('click', exportJson);
+    document.getElementById('importBtn').addEventListener('click', () => fileInput.click());
+    document.getElementById('closeResultsBtn').addEventListener('click', () => resultsEl.style.display = 'none');
+    resultsEl.addEventListener('click', e => { if (e.target === resultsEl) resultsEl.style.display = 'none'; });
+    fileInput.addEventListener('change', async e => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        applyPayload(JSON.parse(await file.text()));
+        setStatus('Importiert.', 100);
+      } catch {
+        setStatus('Import fehlgeschlagen.', 0);
+      } finally {
+        fileInput.value = '';
+      }
+    });
+
+    buildCatalog();
+    selectTool('infra_lagerhaus');
+    render();
+  </script>
+</body>
+</html>
