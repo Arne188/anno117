@@ -270,8 +270,8 @@
 
     #optLiveText {
       min-height: 72px;
-      max-height: 72px;
-      overflow: hidden;
+      max-height: 120px;
+      overflow: auto;
       border: 1px solid var(--line-soft);
       border-radius: 5px;
       background: rgba(255,255,255,.035);
@@ -280,6 +280,47 @@
       line-height: 1.35;
       padding: 6px;
       white-space: pre-line;
+    }
+
+    .diag-live {
+      margin-top: 8px;
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+      background: rgba(255,255,255,.03);
+      padding: 6px;
+    }
+
+    .diag-live strong {
+      display: block;
+      font-size: 11px;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .diag-tools {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+
+    .diag-tools .btn {
+      font-size: 11px;
+      padding: 5px 7px;
+      min-height: 28px;
+    }
+
+    #invalidAttemptsText {
+      min-height: 86px;
+      max-height: 150px;
+      overflow: auto;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+      white-space: pre-line;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      padding: 6px;
+      background: rgba(0,0,0,.2);
     }
 
     .catalog-scroll {
@@ -433,6 +474,7 @@
 
     .stage {
       min-width: 0;
+      min-height: 0;
       display: grid;
       grid-template-rows: auto 1fr;
       background: #111314;
@@ -469,7 +511,10 @@
     .stat strong { color: var(--text); font-weight: 750; display: block; margin-top: 2px; }
 
     .map-wrap {
-      overflow: auto;
+      min-height: 0;
+      overflow-x: auto;
+      overflow-y: auto;
+      overscroll-behavior: contain;
       position: relative;
       padding: 28px;
       background:
@@ -535,6 +580,31 @@
       overflow: hidden;
       text-overflow: ellipsis;
       color: #fff7e8;
+    }
+
+    .tile.debug {
+      background: var(--c);
+      border: 1px dashed rgba(255, 170, 170, .9);
+      box-shadow: none;
+      opacity: .62;
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    .tile.debug-road {
+      background: rgba(84, 160, 255, .28);
+      border: 1px solid rgba(120, 190, 255, .95);
+      box-shadow: none;
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    .tile.debug-anchor {
+      background: rgba(255, 225, 120, .35);
+      border: 1px solid rgba(255, 225, 120, .98);
+      box-shadow: none;
+      z-index: 5;
+      pointer-events: none;
     }
 
     .ghost {
@@ -616,7 +686,7 @@
   <aside class="sidebar">
     <div class="brand">
       <h1>ANNO 117 Planer</h1>
-      <div class="sub">Produktionsmengen planen, optimieren, platzieren (Scrollfix aktiv)</div>
+      <div class="sub">Produktionsmengen planen, optimieren, platzieren</div>
     </div>
 
     <div class="toolbar">
@@ -627,7 +697,9 @@
       <button id="exportBtn" class="btn" title="JSON exportieren">Export</button>
       <button id="importBtn" class="btn" title="JSON importieren">Import</button>
       <button id="learnBtn" class="btn" title="Viele Kombinationen simulieren und lernen">Learn</button>
+      <button id="learnPolicyBtn" class="btn" title="Strategie fuer Gebaeude/Strassen trainieren">Rule Learn</button>
       <button id="learnExportBtn" class="btn" title="Learning Memory exportieren">Mem Export</button>
+      <button id="learnResetBtn" class="btn danger" title="Learning Memory loeschen">Mem Reset</button>
       <button id="clearBtn" class="btn danger" title="Karte leeren">Leeren</button>
       <button id="cancelBtn" class="btn" title="Optimizer abbrechen" disabled>Stop</button>
     </div>
@@ -674,6 +746,14 @@
         <canvas id="optPreview" width="96" height="72"></canvas>
         <div id="optLiveText">Optimizer bereit.</div>
       </div>
+      <div class="diag-live">
+        <strong>Ungueltige Versuche (live)</strong>
+        <div class="diag-tools">
+          <button id="showDebugBtn" class="btn">Letzten Zeigen</button>
+          <button id="clearDebugBtn" class="btn">Debug Aus</button>
+        </div>
+        <div id="invalidAttemptsText">Noch keine Diagnosedaten.</div>
+      </div>
     </div>
   </aside>
 
@@ -708,6 +788,32 @@
     const CELL = 18;
     const STORAGE_KEY = 'anno117_neu_session_v1';
     const LEARN_STORAGE_KEY = 'anno117_optimizer_learning_v1';
+    const POLICY_STORAGE_KEY = 'anno117_optimizer_policy_v1';
+    const POLICY_POOL_STORAGE_KEY = 'anno117_optimizer_policy_pool_v1';
+
+    const DEFAULT_SOLVER_POLICY = {
+      id: 'default',
+      orderPriority: ['area', 'square', 'height', 'wide'],
+      exactPlacementsCap: 140,
+      exactOptionCap: 24,
+      exactNodeMin: 1800,
+      exactNodeMax: 26000,
+      exactNodePerCluster: 4200,
+      exactDeadlineMin: 18,
+      exactDeadlineMax: 55,
+      exactDeadlinePerCluster: 8,
+      rectAreaPick: 180,
+      rectRatioPick: 180,
+      rectMergedCap: 260,
+      fallbackCandidateCap: 80,
+      trainRectCap: 120,
+      trainFallbackRectCap: 50
+    };
+    const RULE_LEARN_DEFAULT_TASKS = 60;
+    const RULE_LEARN_MIN_TASKS = 20;
+    const RULE_LEARN_MAX_TASKS = 120;
+    const RULE_LEARN_PROFILE_CAP = 6;
+    const RULE_LEARN_TASK_BUDGET_MS = 180;
 
     const STRATEGY_WEIGHTS = {
       'field-first': -1800,
@@ -787,6 +893,9 @@
     const learnLog = document.getElementById('learnLog');
     const optPreview = document.getElementById('optPreview');
     const optLiveText = document.getElementById('optLiveText');
+    const invalidAttemptsText = document.getElementById('invalidAttemptsText');
+    const showDebugBtn = document.getElementById('showDebugBtn');
+    const clearDebugBtn = document.getElementById('clearDebugBtn');
     const solutionGrid = document.getElementById('solutionGrid');
     const resultsEl = document.getElementById('results');
     const fileInput = document.getElementById('fileInput');
@@ -797,9 +906,75 @@
     let counts = Object.fromEntries(CATALOG.map(b => [b.id, 0]));
     let cancelOptimize = false;
     let cancelLearning = false;
+    let activeDiag = null;
+    let solverPolicy = loadSolverPolicy();
+    let latestInvalidSnapshot = null;
+    let debugOverlay = null;
 
     function uid() {
       return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    }
+
+    function currentSolverPolicy() {
+      return { ...DEFAULT_SOLVER_POLICY, ...(solverPolicy || {}) };
+    }
+
+    function loadSolverPolicy() {
+      try {
+        const raw = localStorage.getItem(POLICY_STORAGE_KEY);
+        if (!raw) return { ...DEFAULT_SOLVER_POLICY };
+        const parsed = JSON.parse(raw);
+        return { ...DEFAULT_SOLVER_POLICY, ...(parsed || {}) };
+      } catch {
+        return { ...DEFAULT_SOLVER_POLICY };
+      }
+    }
+
+    function saveSolverPolicy(policy) {
+      solverPolicy = { ...DEFAULT_SOLVER_POLICY, ...(policy || {}) };
+      localStorage.setItem(POLICY_STORAGE_KEY, JSON.stringify(solverPolicy));
+    }
+
+    function loadPolicyPool() {
+      try {
+        const raw = localStorage.getItem(POLICY_POOL_STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed?.profiles)) return [];
+        return parsed.profiles
+          .filter(p => p && typeof p === 'object')
+          .map(p => ({ ...DEFAULT_SOLVER_POLICY, ...p }));
+      } catch {
+        return [];
+      }
+    }
+
+    function savePolicyPool(profiles) {
+      const clean = (Array.isArray(profiles) ? profiles : [])
+        .filter(p => p && typeof p === 'object')
+        .map(p => ({ ...DEFAULT_SOLVER_POLICY, ...p }))
+        .slice(0, 6);
+      localStorage.setItem(POLICY_POOL_STORAGE_KEY, JSON.stringify({
+        updatedAt: new Date().toISOString(),
+        profiles: clean
+      }));
+    }
+
+    function getOptimizePolicySequence() {
+      const list = [];
+      const seen = new Set();
+      const add = policy => {
+        if (!policy) return;
+        const merged = { ...DEFAULT_SOLVER_POLICY, ...policy };
+        const id = merged.id || JSON.stringify([merged.orderPriority, merged.exactPlacementsCap, merged.rectMergedCap, merged.fallbackCandidateCap]);
+        if (seen.has(id)) return;
+        seen.add(id);
+        list.push(merged);
+      };
+      add(currentSolverPolicy());
+      for (const p of loadPolicyPool()) add(p);
+      add(DEFAULT_SOLVER_POLICY);
+      return list.slice(0, 4);
     }
 
     function byId(id) {
@@ -856,8 +1031,69 @@
       drawSolutionToCanvas(optPreview, sol);
     }
 
+    function updateInvalidAttemptsLive(text) {
+      if (invalidAttemptsText) invalidAttemptsText.textContent = text;
+    }
+
+    function clearDebugOverlay() {
+      debugOverlay = null;
+      render();
+      if (mapHint) mapHint.textContent = 'Debug-Overlay aus';
+    }
+
+    function showDebugSnapshot(snapshot) {
+      if (!snapshot?.debug?.items?.length) return;
+      const baseItems = snapshot.debug.items.map(it => ({
+        uid: uid(),
+        id: it.id || 'debug',
+        name: it.name || it.kind || 'debug',
+        x: it.x,
+        y: it.y,
+        w: it.w,
+        h: it.h,
+        kind: 'debug',
+        color: it.color || '#aa6666'
+      }));
+      const markerItems = [];
+      const metaW = Number(snapshot.debug?.meta?.width || 0);
+      const metaH = Number(snapshot.debug?.meta?.height || 0);
+      if (metaW > 0 && metaH > 0) {
+        for (let x = 0; x < metaW; x++) {
+          markerItems.push({ uid: uid(), id: 'debug-frame', name: 'Frame', x, y: 0, w: 1, h: 1, kind: 'debug-anchor', color: '#f2cf66' });
+          markerItems.push({ uid: uid(), id: 'debug-frame', name: 'Frame', x, y: metaH - 1, w: 1, h: 1, kind: 'debug-anchor', color: '#f2cf66' });
+        }
+        for (let y = 0; y < metaH; y++) {
+          markerItems.push({ uid: uid(), id: 'debug-frame', name: 'Frame', x: 0, y, w: 1, h: 1, kind: 'debug-anchor', color: '#f2cf66' });
+          markerItems.push({ uid: uid(), id: 'debug-frame', name: 'Frame', x: metaW - 1, y, w: 1, h: 1, kind: 'debug-anchor', color: '#f2cf66' });
+        }
+      }
+      for (const p of snapshot.debug?.meta?.roadSet || []) {
+        markerItems.push({ uid: uid(), id: 'debug-road', name: 'Road Set', x: p.x, y: p.y, w: 1, h: 1, kind: 'debug-road', color: '#5aa8ff' });
+      }
+      for (const p of snapshot.debug?.meta?.targetAnchors || []) {
+        markerItems.push({ uid: uid(), id: 'debug-anchor', name: 'Anchor', x: p.x, y: p.y, w: 1, h: 1, kind: 'debug-anchor', color: '#ffd36a' });
+      }
+      debugOverlay = { items: baseItems.concat(markerItems), title: `${snapshot.pass} ${snapshot.rect} ${snapshot.mode} -> ${snapshot.reason}` };
+      render();
+      if (mapHint) mapHint.textContent = `Debug: ${debugOverlay.title}`;
+      setStatus(`Debug-Overlay: ${debugOverlay.title}`, Number(progressEl?.style?.width?.replace('%', '')) || 0);
+    }
+
     function tick() {
       return new Promise(resolve => requestAnimationFrame(resolve));
+    }
+
+    function diagHit(reason) {
+      if (!activeDiag || !reason) return;
+      activeDiag.counts[reason] = (activeDiag.counts[reason] || 0) + 1;
+    }
+
+    function diagTopReasons(limit = 5) {
+      if (!activeDiag) return [];
+      return Object.entries(activeDiag.counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit)
+        .map(([key, count]) => `${key}: ${count}`);
     }
 
     function buildCatalog() {
@@ -981,20 +1217,28 @@
 
     function render() {
       mapEl.querySelectorAll('.tile').forEach(n => n.remove());
-      for (const it of items) {
+      const draw = (it, isDebug = false) => {
         const el = document.createElement('div');
         el.className = 'tile';
+        if (isDebug) el.classList.add('debug');
         if (it.kind === 'field') el.classList.add('field');
         if (it.kind === 'road') el.classList.add('road');
         if (it.kind === 'pad') el.classList.add('pad');
+        if (it.kind === 'debug-road') el.classList.add('debug-road');
+        if (it.kind === 'debug-anchor') el.classList.add('debug-anchor');
         el.style.setProperty('--x', it.x);
         el.style.setProperty('--y', it.y);
         el.style.setProperty('--w', it.w);
         el.style.setProperty('--h', it.h);
         el.style.setProperty('--c', it.color || '#777');
         el.title = `${it.name} ${it.w}x${it.h}`;
-        el.innerHTML = `<span>${it.kind === 'field' || it.kind === 'pad' || it.kind === 'road' ? '' : it.name}</span>`;
+        const labelOff = it.kind === 'field' || it.kind === 'pad' || it.kind === 'road' || it.kind === 'debug-road' || it.kind === 'debug-anchor';
+        el.innerHTML = `<span>${labelOff ? '' : it.name}</span>`;
         mapEl.appendChild(el);
+      };
+      for (const it of items) draw(it, false);
+      if (debugOverlay?.items?.length) {
+        for (const it of debugOverlay.items) draw(it, true);
       }
       updateStats();
     }
@@ -1038,99 +1282,31 @@
       const f = base.fields;
       const unitW = Math.max(1, f.unitW || 1);
       const unitH = Math.max(1, f.unitH || 1);
-
-      function unitLayouts(count) {
-        const layouts = [];
-        for (let cols = 1; cols <= count; cols++) {
-          const rows = Math.ceil(count / cols);
-          const spare = cols * rows - count;
-          const fw = cols * unitW;
-          const fh = rows * unitH;
-          const ratio = Math.max(fw, fh) / Math.max(1, Math.min(fw, fh));
-          layouts.push({ cols, rows, fw, fh, spare, ratio });
+      const fieldArea = f.count * unitW * unitH;
+      const buildingPart = {
+        uid: farmUid,
+        id: base.id,
+        name: base.name,
+        x: 0,
+        y: 0,
+        w: base.w,
+        h: base.h,
+        color: base.color,
+        kind: 'building',
+        farmFields: {
+          id: f.id,
+          name: f.name,
+          count: f.count,
+          unitW,
+          unitH,
+          color: f.color
         }
-        layouts.sort((a, b) => a.spare - b.spare || a.ratio - b.ratio || (a.fw * a.fh) - (b.fw * b.fh));
-        return layouts.slice(0, 10);
-      }
-
-      function fieldParts(layout, ox, oy) {
-        const out = [];
-        for (let n = 0; n < f.count; n++) {
-          const cx = n % layout.cols;
-          const cy = Math.floor(n / layout.cols);
-          out.push({
-            uid: uid(),
-            id: f.id,
-            name: f.name,
-            x: ox + cx * unitW,
-            y: oy + cy * unitH,
-            w: unitW,
-            h: unitH,
-            color: f.color,
-            kind: 'field',
-            farmUid
-          });
-        }
-        return out;
-      }
-
-      function makeVariant(layout, side) {
-        let w, h, farmX, farmY, fieldX, fieldY;
-        if (side === 'right') {
-          w = layout.fw + base.w;
-          h = Math.max(layout.fh, base.h);
-          fieldX = 0;
-          fieldY = Math.floor((h - layout.fh) / 2);
-          farmX = layout.fw;
-          farmY = Math.floor((h - base.h) / 2);
-        } else if (side === 'left') {
-          w = layout.fw + base.w;
-          h = Math.max(layout.fh, base.h);
-          farmX = 0;
-          farmY = Math.floor((h - base.h) / 2);
-          fieldX = base.w;
-          fieldY = Math.floor((h - layout.fh) / 2);
-        } else if (side === 'bottom') {
-          w = Math.max(layout.fw, base.w);
-          h = layout.fh + base.h;
-          fieldX = Math.floor((w - layout.fw) / 2);
-          fieldY = 0;
-          farmX = Math.floor((w - base.w) / 2);
-          farmY = layout.fh;
-        } else {
-          w = Math.max(layout.fw, base.w);
-          h = layout.fh + base.h;
-          farmX = Math.floor((w - base.w) / 2);
-          farmY = 0;
-          fieldX = Math.floor((w - layout.fw) / 2);
-          fieldY = base.h;
-        }
-
-        const parts = [
-          { uid: farmUid, id: base.id, name: base.name, x: farmX, y: farmY, w: base.w, h: base.h, color: base.color, kind: 'building' },
-          ...fieldParts(layout, fieldX, fieldY)
-        ];
-        const occupied = base.w * base.h + f.count * unitW * unitH;
-        const moduleArea = w * h;
-        const ratio = Math.max(w, h) / Math.max(1, Math.min(w, h));
-        return { w, h, area: moduleArea, occupied, waste: moduleArea - occupied, ratio, parts };
-      }
-
-      const variants = [];
-      const seen = new Set();
-      for (const layout of unitLayouts(f.count)) {
-        for (const side of ['right', 'bottom', 'left', 'top']) {
-          const v = makeVariant(layout, side);
-          const sig = `${v.w}x${v.h}:${side}:${layout.cols}x${layout.rows}`;
-          if (seen.has(sig)) continue;
-          seen.add(sig);
-          variants.push(v);
-        }
-      }
-
-      variants.sort((a, b) => a.waste - b.waste || a.ratio - b.ratio || a.area - b.area);
-      const best = variants[0];
-      return { id: base.id + '-' + index, name: base.name, w: best.w, h: best.h, area: best.area, parts: best.parts, variants: variants.slice(0, 24) };
+      };
+      const parts = [buildingPart];
+      const moduleArea = base.w * base.h + fieldArea;
+      const ratio = Math.max(base.w, base.h) / Math.max(1, Math.min(base.w, base.h));
+      const variant = { w: base.w, h: base.h, area: moduleArea, occupied: base.w * base.h, waste: fieldArea, ratio, parts };
+      return { id: base.id + '-' + index, name: base.name, w: base.w, h: base.h, area: moduleArea, parts, variants: [variant] };
     }
 
     function clustersFromCounts(countMap) {
@@ -1197,7 +1373,8 @@
         .slice(0, limit);
     }
 
-    function packExactRect(clusters, width, height, orderName, allowRotate) {
+    function packExactRect(clusters, width, height, orderName, allowRotate, debugSink = null) {
+      const policy = currentSolverPolicy();
       const list = clusters.map(c => ({ ...c, parts: c.parts.map(p => ({ ...p })) }));
       if (orderName === 'height') list.sort((a, b) => b.h - a.h || b.area - a.area);
       if (orderName === 'area') list.sort((a, b) => b.area - a.area || b.h - a.h);
@@ -1207,7 +1384,10 @@
 
       const innerW = width - 2;
       const innerH = height - 2;
-      if (innerW <= 0 || innerH <= 0) return null;
+      if (innerW <= 0 || innerH <= 0) {
+        diagHit('exact.inner_too_small');
+        return null;
+      }
 
       const centerX = width / 2;
       const centerY = height / 2;
@@ -1227,17 +1407,20 @@
           }
         }
         placements.sort((a, b) => a.score - b.score || a.y - b.y || a.x - b.x);
-        return placements.slice(0, 260);
+        return placements.slice(0, Math.max(40, policy.exactPlacementsCap || DEFAULT_SOLVER_POLICY.exactPlacementsCap));
       });
 
-      if (domains.some(d => !d.length)) return null;
+      if (domains.some(d => !d.length)) {
+        diagHit('exact.no_placements_for_cluster');
+        return null;
+      }
 
       const occupied = new Uint8Array(width * height);
       const placed = new Array(list.length);
       const used = new Array(list.length).fill(false);
       let nodes = 0;
-      const nodeLimit = Math.max(2500, Math.min(70000, list.length * 9000));
-      const deadline = performance.now() + Math.max(24, Math.min(140, list.length * 18));
+      const nodeLimit = Math.max(policy.exactNodeMin || 1800, Math.min(policy.exactNodeMax || 26000, list.length * (policy.exactNodePerCluster || 4200)));
+      const deadline = performance.now() + Math.max(policy.exactDeadlineMin || 18, Math.min(policy.exactDeadlineMax || 55, list.length * (policy.exactDeadlinePerCluster || 8)));
 
       function canPlace(pl) {
         const c = pl.cluster;
@@ -1266,7 +1449,7 @@
           const options = [];
           for (const pl of domains[i]) {
             if (canPlace(pl)) options.push(pl);
-            if (options.length > 42) break;
+            if (options.length > Math.max(8, policy.exactOptionCap || DEFAULT_SOLVER_POLICY.exactOptionCap)) break;
           }
           if (!options.length) return { idx: i, options };
           if (!bestOptions || options.length < bestOptions.length) {
@@ -1299,21 +1482,62 @@
         return false;
       }
 
-      if (!search(0)) return null;
+      if (!search(0)) {
+        diagHit('exact.search_failed');
+        if (debugSink) {
+          const partial = [];
+          for (const pl of placed) {
+            if (!pl) continue;
+            for (const p of pl.cluster.parts) partial.push({ ...p, x: pl.x + p.x, y: pl.y + p.y });
+          }
+          debugSink.reason = 'exact.search_failed';
+          debugSink.items = cloneDebugItems(partial);
+          debugSink.meta = { width, height, partial: true };
+        }
+        return null;
+      }
 
       const packed = [];
       for (const pl of placed) {
         for (const p of pl.cluster.parts) packed.push({ ...p, x: pl.x + p.x, y: pl.y + p.y });
       }
 
-      const roads = addRoadsInRect(packed, width, height);
-      if (!roads) return null;
-      const all = packed.concat(roads);
+      const all = packed.map(it => ({ ...it }));
+      if (!placeFlexibleFields(all, width, height)) {
+        diagHit('exact.fields_failed');
+        if (debugSink) {
+          debugSink.reason = 'exact.fields_failed';
+          debugSink.items = cloneDebugItems(all);
+          debugSink.meta = { width, height };
+        }
+        return null;
+      }
+      const roadsDebug = debugSink ? {} : null;
+      const roads = addRoadsInRect(all, width, height, roadsDebug);
+      if (!roads) {
+        diagHit('exact.roads_failed');
+        if (debugSink) {
+          debugSink.reason = roadsDebug?.reason || 'exact.roads_failed';
+          debugSink.items = cloneDebugItems(roadsDebug?.items || all);
+          debugSink.meta = { width, height, ...(roadsDebug?.meta || {}) };
+        }
+        return null;
+      }
+      all.push(...roads);
       fillSolidPads(all, width, height);
       const bbox = boundingBox(all);
-      if (!bbox || bbox.w !== width || bbox.h !== height) return null;
-      if (!validateRoadRules(all)) return null;
-      if (!validateSolidRectangle(all, width, height)) return null;
+      if (!bbox || bbox.w !== width || bbox.h !== height) {
+        diagHit('exact.bbox_mismatch');
+        return null;
+      }
+      if (!validateRoadRules(all)) {
+        diagHit('exact.road_rules_failed');
+        return null;
+      }
+      if (!validateSolidRectangle(all, width, height)) {
+        diagHit('exact.not_solid_rectangle');
+        return null;
+      }
       return scoreSolution(all, `exact ${orderName}${allowRotate ? ' rot' : ''}`);
     }
 
@@ -1370,6 +1594,8 @@
           }
         }
       }
+
+      if (!placeFlexibleFields(itemsLocal, width, height)) return null;
 
       const blocked = new Set();
       for (const it of itemsLocal) {
@@ -1492,6 +1718,7 @@
           }
         }
 
+        if (!placeFlexibleFields(out, width, height)) continue;
         fillSolidPads(out, width, height);
         if (!validateRoadRules(out)) continue;
         if (!validateSolidRectangle(out, width, height)) continue;
@@ -1674,6 +1901,7 @@
           }
         }
 
+        if (!placeFlexibleFields(out, width, height)) continue;
         fillSolidPads(out, width, height);
         if (!validateRoadRules(out)) continue;
         if (!validateSolidRectangle(out, width, height)) continue;
@@ -1857,6 +2085,7 @@
           }
         }
 
+        if (!placeFlexibleFields(out, width, height)) continue;
         fillSolidPads(out, width, height);
         if (!validateRoadRules(out)) continue;
         if (!validateSolidRectangle(out, width, height)) continue;
@@ -1867,7 +2096,7 @@
       return candidates[0] || null;
     }
 
-    function packSolidRect(clusters, width, height, orderName, allowRotate) {
+    function packSolidRect(clusters, width, height, orderName, allowRotate, debugSink = null) {
       const list = clusters.map(c => ({ ...c, parts: c.parts.map(p => ({ ...p })) }));
       if (orderName === 'height') list.sort((a, b) => b.h - a.h || b.area - a.area);
       if (orderName === 'area') list.sort((a, b) => b.area - a.area || b.h - a.h);
@@ -1877,7 +2106,10 @@
 
       const innerRight = width - 1;
       const innerBottom = height - 1;
-      if (innerRight <= 1 || innerBottom <= 1) return null;
+      if (innerRight <= 1 || innerBottom <= 1) {
+        diagHit('fallback.inner_too_small');
+        return null;
+      }
 
       const placedClusters = [];
       let freeRects = [{ x: 1, y: 1, w: width - 2, h: height - 2 }];
@@ -1957,7 +2189,10 @@
 
       for (const original of list) {
         const variants = variantsFor(original);
-        if (!variants.length) return null;
+        if (!variants.length) {
+          diagHit('fallback.no_variants_for_cluster');
+          return null;
+        }
 
         let best = null;
         for (let frIndex = 0; frIndex < freeRects.length; frIndex++) {
@@ -1977,7 +2212,19 @@
           }
         }
 
-        if (!best) return null;
+        if (!best) {
+          diagHit('fallback.no_fit_in_free_rects');
+          if (debugSink) {
+            const partial = [];
+            for (const pc of placedClusters) {
+              for (const p of pc.cluster.parts) partial.push({ ...p, x: pc.x + p.x, y: pc.y + p.y });
+            }
+            debugSink.reason = 'fallback.no_fit_in_free_rects';
+            debugSink.items = cloneDebugItems(partial);
+            debugSink.meta = { width, height, partial: true };
+          }
+          return null;
+        }
         placedClusters.push({ cluster: best.cluster, x: best.x, y: best.y });
         splitFreeRects(best.rect);
       }
@@ -1989,14 +2236,71 @@
         }
       }
 
-      const roads = addRoadsInRect(packed, width, height);
-      if (!roads) return null;
-      const all = packed.concat(roads);
+      const buildingTiles = new Set();
+      const key = (x, y) => x + ',' + y;
+      for (const it of packed) {
+        if (it.kind !== 'building') continue;
+        for (let y = it.y; y < it.y + it.h; y++) {
+          for (let x = it.x; x < it.x + it.w; x++) buildingTiles.add(key(x, y));
+        }
+      }
+      function hasFreeAdjacentTile(rect) {
+        for (let x = rect.x; x < rect.x + rect.w; x++) {
+          if (!buildingTiles.has(key(x, rect.y - 1))) return true;
+          if (!buildingTiles.has(key(x, rect.y + rect.h))) return true;
+        }
+        for (let y = rect.y; y < rect.y + rect.h; y++) {
+          if (!buildingTiles.has(key(rect.x - 1, y))) return true;
+          if (!buildingTiles.has(key(rect.x + rect.w, y))) return true;
+        }
+        return false;
+      }
+      if (packed.some(it => it.kind === 'building' && !hasFreeAdjacentTile(it))) {
+        diagHit('fallback.no_free_adjacent_for_building');
+        if (debugSink) {
+          debugSink.reason = 'fallback.no_free_adjacent_for_building';
+          debugSink.items = cloneDebugItems(packed);
+          debugSink.meta = { width, height };
+        }
+        return null;
+      }
+
+      const all = packed.map(it => ({ ...it }));
+      if (!placeFlexibleFields(all, width, height)) {
+        diagHit('fallback.fields_failed');
+        if (debugSink) {
+          debugSink.reason = 'fallback.fields_failed';
+          debugSink.items = cloneDebugItems(all);
+          debugSink.meta = { width, height };
+        }
+        return null;
+      }
+      const roadsDebug = debugSink ? {} : null;
+      const roads = addRoadsInRect(all, width, height, roadsDebug);
+      if (!roads) {
+        diagHit('fallback.roads_failed');
+        if (debugSink) {
+          debugSink.reason = roadsDebug?.reason || 'fallback.roads_failed';
+          debugSink.items = cloneDebugItems(roadsDebug?.items || all);
+          debugSink.meta = { width, height, ...(roadsDebug?.meta || {}) };
+        }
+        return null;
+      }
+      all.push(...roads);
       fillSolidPads(all, width, height);
       const bbox = boundingBox(all);
-      if (!bbox || bbox.w !== width || bbox.h !== height) return null;
-      if (!validateRoadRules(all)) return null;
-      if (!validateSolidRectangle(all, width, height)) return null;
+      if (!bbox || bbox.w !== width || bbox.h !== height) {
+        diagHit('fallback.bbox_mismatch');
+        return null;
+      }
+      if (!validateRoadRules(all)) {
+        diagHit('fallback.road_rules_failed');
+        return null;
+      }
+      if (!validateSolidRectangle(all, width, height)) {
+        diagHit('fallback.not_solid_rectangle');
+        return null;
+      }
       return scoreSolution(all, orderName + (allowRotate ? ' rot' : ''));
     }
 
@@ -2023,7 +2327,20 @@
       }
     }
 
-    function addRoadsInRect(list, width, height) {
+    function cloneDebugItems(list) {
+      return (Array.isArray(list) ? list : []).map(it => ({
+        id: it.id,
+        name: it.name,
+        x: it.x,
+        y: it.y,
+        w: it.w,
+        h: it.h,
+        kind: it.kind,
+        color: it.color
+      }));
+    }
+
+    function addRoadsInRect(list, width, height, debugSink = null) {
       const key = (x, y) => x + ',' + y;
       const parse = value => {
         const comma = value.indexOf(',');
@@ -2099,10 +2416,17 @@
       if (!buildings.length) return [];
       const warehouse = buildings.find(it => it.id === 'infra_lagerhaus') || buildings[0];
       const warehouseAnchors = anchorsFor(warehouse);
-      if (!warehouseAnchors.length) return null;
+      if (!warehouseAnchors.length) {
+        diagHit('roads.no_warehouse_anchor');
+        if (debugSink) {
+          debugSink.reason = 'roads.no_warehouse_anchor';
+          debugSink.items = cloneDebugItems(list);
+          debugSink.meta = { width, height, warehouse: { x: warehouse.x, y: warehouse.y, w: warehouse.w, h: warehouse.h } };
+        }
+        return null;
+      }
 
-      warehouseAnchors.sort((a, b) => (a.y - b.y) || (a.x - b.x));
-      const roadSet = new Set([key(warehouseAnchors[0].x, warehouseAnchors[0].y)]);
+      const roadSet = new Set(warehouseAnchors.map(p => key(p.x, p.y)));
       const ordered = buildings
         .filter(it => it !== warehouse)
         .sort((a, b) => {
@@ -2113,7 +2437,15 @@
 
       for (const building of ordered) {
         const targetSet = new Set(anchorsFor(building).map(p => key(p.x, p.y)));
-        if (!targetSet.size) return null;
+        if (!targetSet.size) {
+          diagHit('roads.no_building_anchor');
+          if (debugSink) {
+            debugSink.reason = 'roads.no_building_anchor';
+            debugSink.items = cloneDebugItems(list);
+            debugSink.meta = { width, height, building: { x: building.x, y: building.y, w: building.w, h: building.h } };
+          }
+          return null;
+        }
         let connected = false;
         for (const target of targetSet) {
           if (roadSet.has(target)) {
@@ -2123,7 +2455,21 @@
         }
         if (!connected) {
           const path = findPathToTargets(roadSet, targetSet);
-          if (!path) return null;
+          if (!path) {
+            diagHit('roads.no_path_to_building');
+            if (debugSink) {
+              debugSink.reason = 'roads.no_path_to_building';
+              debugSink.items = cloneDebugItems(list);
+              debugSink.meta = {
+                width,
+                height,
+                building: { x: building.x, y: building.y, w: building.w, h: building.h },
+                roadSet: [...roadSet].map(parse),
+                targetAnchors: [...targetSet].map(parse)
+              };
+            }
+            return null;
+          }
           for (const p of path) roadSet.add(p);
         }
       }
@@ -2140,7 +2486,15 @@
       const touchesEdge = [...roadSet].some(k => edgeTargets.has(k));
       if (!touchesEdge) {
         const edgePath = findPathToTargets(roadSet, edgeTargets);
-        if (!edgePath) return null;
+        if (!edgePath) {
+          diagHit('roads.no_path_to_edge');
+          if (debugSink) {
+            debugSink.reason = 'roads.no_path_to_edge';
+            debugSink.items = cloneDebugItems(list);
+            debugSink.meta = { width, height, roadSet: [...roadSet].map(parse) };
+          }
+          return null;
+        }
         for (const p of edgePath) roadSet.add(p);
       }
 
@@ -2148,6 +2502,320 @@
         const p = parse(k);
         return { uid: uid(), id: 'road_feldweg', name: 'Feldweg', x: p.x, y: p.y, w: 1, h: 1, color: '#665539', kind: 'road' };
       });
+    }
+
+    function placeFlexibleFields(list, width, height) {
+      const key = (x, y) => x + ',' + y;
+      const occupied = new Set();
+      const inBounds = (x, y, w, h) => x >= 0 && y >= 0 && x + w <= width && y + h <= height;
+      const overlap1D = (a0, a1, b0, b1) => a0 < b1 && a1 > b0;
+      const touchesByEdge = (a, b) => (
+        (a.x + a.w === b.x && overlap1D(a.y, a.y + a.h, b.y, b.y + b.h)) ||
+        (b.x + b.w === a.x && overlap1D(a.y, a.y + a.h, b.y, b.y + b.h)) ||
+        (a.y + a.h === b.y && overlap1D(a.x, a.x + a.w, b.x, b.x + b.w)) ||
+        (b.y + b.h === a.y && overlap1D(a.x, a.x + a.w, b.x, b.x + b.w))
+      );
+
+      for (const it of list) {
+        if (it.kind === 'road') continue;
+        for (let y = it.y; y < it.y + it.h; y++) {
+          for (let x = it.x; x < it.x + it.w; x++) occupied.add(key(x, y));
+        }
+      }
+
+      function canFit(rect) {
+        if (!inBounds(rect.x, rect.y, rect.w, rect.h)) return false;
+        for (let y = rect.y; y < rect.y + rect.h; y++) {
+          for (let x = rect.x; x < rect.x + rect.w; x++) {
+            const k = key(x, y);
+            if (occupied.has(k) || reservedRoadTiles.has(k)) return false;
+          }
+        }
+        return true;
+      }
+
+      function markOccupied(rect) {
+        for (let y = rect.y; y < rect.y + rect.h; y++) {
+          for (let x = rect.x; x < rect.x + rect.w; x++) {
+            occupied.add(key(x, y));
+          }
+        }
+      }
+
+      function clearRoadOverlap(rect) {
+        for (let i = list.length - 1; i >= 0; i--) {
+          const it = list[i];
+          if (it.kind !== 'road') continue;
+          if (rectsOverlap(rect, it)) list.splice(i, 1);
+        }
+      }
+
+      const buildings = list.filter(it => it.kind === 'building');
+      const warehouse = buildings.find(it => it.id === 'infra_lagerhaus') || null;
+      const warehouseCenter = warehouse ? { x: warehouse.x + warehouse.w / 2, y: warehouse.y + warehouse.h / 2 } : null;
+      const reservedRoadTiles = new Set();
+
+      const buildingBlocked = new Set();
+      for (const b of buildings) {
+        for (let y = b.y; y < b.y + b.h; y++) {
+          for (let x = b.x; x < b.x + b.w; x++) buildingBlocked.add(key(x, y));
+        }
+      }
+
+      function buildingAnchorCandidates(building) {
+        const out = [];
+        const push = (x, y) => {
+          if (x < 0 || y < 0 || x >= width || y >= height) return;
+          const k = key(x, y);
+          if (occupied.has(k)) return;
+          out.push({ x, y, k });
+        };
+        for (let x = building.x; x < building.x + building.w; x++) {
+          push(x, building.y - 1);
+          push(x, building.y + building.h);
+        }
+        for (let y = building.y; y < building.y + building.h; y++) {
+          push(building.x - 1, y);
+          push(building.x + building.w, y);
+        }
+        const unique = [];
+        const seen = new Set();
+        for (const p of out) {
+          if (seen.has(p.k)) continue;
+          seen.add(p.k);
+          unique.push(p);
+        }
+        return unique;
+      }
+
+      function reservePath(start, goal) {
+        if (!start || !goal) return false;
+        const startKey = key(start.x, start.y);
+        const goalKey = key(goal.x, goal.y);
+        const queue = [startKey];
+        const parent = new Map([[startKey, null]]);
+        while (queue.length) {
+          const cur = queue.shift();
+          if (cur === goalKey) break;
+          const comma = cur.indexOf(',');
+          const x = Number(cur.slice(0, comma));
+          const y = Number(cur.slice(comma + 1));
+          const next = [
+            [x - 1, y],
+            [x + 1, y],
+            [x, y - 1],
+            [x, y + 1]
+          ];
+          for (const [nx, ny] of next) {
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            const nk = key(nx, ny);
+            if (parent.has(nk)) continue;
+            if (buildingBlocked.has(nk) && nk !== goalKey) continue;
+            parent.set(nk, cur);
+            queue.push(nk);
+          }
+        }
+        if (!parent.has(goalKey)) return false;
+        for (let cur = goalKey; cur; cur = parent.get(cur)) reservedRoadTiles.add(cur);
+        return true;
+      }
+
+      function addTouchingSlots(set, refRect, unitW, unitH) {
+        const add = (x, y) => set.add(key(x, y));
+        const yStart = refRect.y - unitH + 1;
+        const yEnd = refRect.y + refRect.h - 1;
+        add(refRect.x - unitW, yStart);
+        add(refRect.x + refRect.w, yStart);
+        for (let y = yStart + 1; y <= yEnd; y++) {
+          add(refRect.x - unitW, y);
+          add(refRect.x + refRect.w, y);
+        }
+        const xStart = refRect.x - unitW + 1;
+        const xEnd = refRect.x + refRect.w - 1;
+        add(xStart, refRect.y - unitH);
+        add(xStart, refRect.y + refRect.h);
+        for (let x = xStart + 1; x <= xEnd; x++) {
+          add(x, refRect.y - unitH);
+          add(x, refRect.y + refRect.h);
+        }
+      }
+
+      const farmStates = list
+        .filter(it => it.kind === 'building' && it.farmFields && Number(it.farmFields.count) > 0)
+        .map(farm => {
+          const cfg = farm.farmFields;
+          const unitW = Math.max(1, cfg.unitW || 1);
+          const unitH = Math.max(1, cfg.unitH || 1);
+          const targetCount = Math.max(0, Math.floor(cfg.count || 0));
+          const existingFarmFields = list.filter(it => it.kind === 'field' && it.farmUid === farm.uid);
+          const farmRects = existingFarmFields.map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h }));
+          return {
+            farm,
+            cfg,
+            unitW,
+            unitH,
+            farmRects,
+            remaining: Math.max(0, targetCount - existingFarmFields.length),
+            centerX: farm.x + farm.w / 2,
+            centerY: farm.y + farm.h / 2,
+            anchorOptions: 0,
+            frontier: new Set()
+          };
+        })
+        .filter(state => state.remaining > 0);
+
+      function scoreRect(state, rect) {
+        const touchesFarmBuilding = touchesByEdge(rect, state.farm);
+        const touchesOwnField = state.farmRects.some(r => touchesByEdge(rect, r));
+        const cx = rect.x + rect.w / 2;
+        const cy = rect.y + rect.h / 2;
+        const dist = Math.abs(cx - state.centerX) + Math.abs(cy - state.centerY);
+        return dist * 10 + (touchesFarmBuilding ? -14 : 0) + (touchesOwnField ? -8 : 0);
+      }
+
+      function chooseSlot(state, requireTouchFarmBuilding) {
+        let best = null;
+        const tryCandidate = (x, y, allowTouchFarmAfterAnchor = false) => {
+          const rect = { x, y, w: state.unitW, h: state.unitH };
+          if (!canFit(rect)) return;
+          const touchesFarmBuilding = touchesByEdge(rect, state.farm);
+          if (requireTouchFarmBuilding && !touchesFarmBuilding) return;
+          if (!requireTouchFarmBuilding && touchesFarmBuilding && !allowTouchFarmAfterAnchor) return;
+          const score = scoreRect(state, rect);
+          if (!best || score < best.score || (score === best.score && (y < best.rect.y || (y === best.rect.y && x < best.rect.x)))) {
+            best = { rect, score };
+          }
+        };
+
+        if (requireTouchFarmBuilding) {
+          const anchorSet = new Set();
+          addTouchingSlots(anchorSet, state.farm, state.unitW, state.unitH);
+          for (const k of anchorSet) {
+            const comma = k.indexOf(',');
+            const x = Number(k.slice(0, comma));
+            const y = Number(k.slice(comma + 1));
+            tryCandidate(x, y);
+          }
+        } else {
+          for (const k of state.frontier) {
+            const comma = k.indexOf(',');
+            const x = Number(k.slice(0, comma));
+            const y = Number(k.slice(comma + 1));
+            tryCandidate(x, y);
+          }
+          if (!best) {
+            for (let y = 0; y <= height - state.unitH; y++) {
+              for (let x = 0; x <= width - state.unitW; x++) {
+                tryCandidate(x, y, true);
+              }
+            }
+          }
+        }
+        return best ? best.rect : null;
+      }
+
+      for (const state of farmStates) {
+        const anchorSet = new Set();
+        addTouchingSlots(anchorSet, state.farm, state.unitW, state.unitH);
+        for (const k of anchorSet) {
+          const comma = k.indexOf(',');
+          const x = Number(k.slice(0, comma));
+          const y = Number(k.slice(comma + 1));
+          const rect = { x, y, w: state.unitW, h: state.unitH };
+          if (canFit(rect) && touchesByEdge(rect, state.farm)) state.anchorOptions++;
+        }
+      }
+
+      farmStates.sort((a, b) => a.anchorOptions - b.anchorOptions || b.remaining - a.remaining);
+
+      function addFieldForState(state, rect) {
+        clearRoadOverlap(rect);
+        markOccupied(rect);
+        state.farmRects.push(rect);
+        state.remaining--;
+        list.push({
+          uid: uid(),
+          id: state.cfg.id,
+          name: state.cfg.name,
+          x: rect.x,
+          y: rect.y,
+          w: state.unitW,
+          h: state.unitH,
+          color: state.cfg.color,
+          kind: 'field',
+          farmUid: state.farm.uid
+        });
+        addTouchingSlots(state.frontier, rect, state.unitW, state.unitH);
+      }
+
+      for (const state of farmStates) {
+        const first = chooseSlot(state, true);
+        if (!first) {
+          diagHit('fields.no_anchor_slot');
+          return false;
+        }
+        addFieldForState(state, first);
+      }
+
+      function reserveRoadAnchorsAndPaths() {
+        reservedRoadTiles.clear();
+        const chosenAnchors = new Map();
+        for (const b of buildings) {
+          const anchors = buildingAnchorCandidates(b);
+          if (!anchors.length) continue;
+          let best = anchors[0];
+          for (const a of anchors) {
+            let score;
+            if (b.id === 'infra_lagerhaus') {
+              score = Math.min(a.x, a.y, (width - 1) - a.x, (height - 1) - a.y);
+            } else if (warehouseCenter) {
+              score = Math.abs(a.x - warehouseCenter.x) + Math.abs(a.y - warehouseCenter.y);
+            } else {
+              score = 0;
+            }
+            if (score < best.score || best.score === undefined) best = { ...a, score };
+          }
+          reservedRoadTiles.add(best.k);
+          chosenAnchors.set(b.uid, { x: best.x, y: best.y, k: best.k });
+        }
+
+        if (warehouse) {
+          const whAnchor = chosenAnchors.get(warehouse.uid);
+          for (const b of buildings) {
+            if (b.uid === warehouse.uid) continue;
+            const a = chosenAnchors.get(b.uid);
+            if (!a || !whAnchor) continue;
+            reservePath(a, whAnchor);
+          }
+        }
+      }
+
+      reserveRoadAnchorsAndPaths();
+
+      let guard = 0;
+      const totalRemaining = () => farmStates.reduce((sum, state) => sum + state.remaining, 0);
+      while (totalRemaining() > 0) {
+        guard++;
+        if (guard > 20000) {
+          diagHit('fields.guard_limit');
+          return false;
+        }
+        let progress = false;
+        farmStates.sort((a, b) => b.remaining - a.remaining || a.anchorOptions - b.anchorOptions);
+        for (const state of farmStates) {
+          if (state.remaining <= 0) continue;
+          const next = chooseSlot(state, false);
+          if (!next) continue;
+          addFieldForState(state, next);
+          progress = true;
+        }
+        if (!progress) {
+          diagHit('fields.no_progress');
+          return false;
+        }
+      }
+
+      return true;
     }
 
     function fillSolidPads(list, width, height) {
@@ -2260,12 +2928,14 @@
     }
 
     function buildRectCandidates(clusters) {
+      const policy = currentSolverPolicy();
       const requiredArea = clusters.reduce((sum, c) => sum + c.area, 0);
       const maxBlockSide = clusters.reduce((max, c) => Math.max(max, Math.min(c.w, c.h)), 0);
       const candidates = [];
+      const minSide = Math.max(8, maxBlockSide + 2);
 
-      for (let w = Math.max(8, maxBlockSide + 2); w <= GRID_W; w++) {
-        for (let h = Math.max(8, maxBlockSide + 2); h <= GRID_H; h++) {
+      for (let w = minSide; w <= GRID_W; w++) {
+        for (let h = minSide; h <= GRID_H; h++) {
           const area = w * h;
           if (area < requiredArea) continue;
           if (area > requiredArea * 2.2 + 420) continue;
@@ -2274,8 +2944,24 @@
         }
       }
 
-      candidates.sort((a, b) => a.area - b.area || a.ratio - b.ratio || a.w - b.w);
-      return candidates.slice(0, 140);
+      const byArea = candidates
+        .slice()
+        .sort((a, b) => a.area - b.area || a.ratio - b.ratio || a.w - b.w)
+        .slice(0, Math.max(30, policy.rectAreaPick || DEFAULT_SOLVER_POLICY.rectAreaPick));
+      const byRatio = candidates
+        .slice()
+        .sort((a, b) => a.ratio - b.ratio || a.area - b.area || a.w - b.w)
+        .slice(0, Math.max(30, policy.rectRatioPick || DEFAULT_SOLVER_POLICY.rectRatioPick));
+
+      const merged = [];
+      const seen = new Set();
+      for (const c of byRatio.concat(byArea)) {
+        const sig = `${c.w}x${c.h}`;
+        if (seen.has(sig)) continue;
+        seen.add(sig);
+        merged.push(c);
+      }
+      return merged.slice(0, Math.max(40, policy.rectMergedCap || DEFAULT_SOLVER_POLICY.rectMergedCap));
     }
 
     function taskSignature(countMap) {
@@ -2329,6 +3015,12 @@
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 0);
       setStatus(`Learning Memory exportiert: ${payload.taskCount} Aufgaben.`, 100);
+    }
+
+    function resetLearningMemory() {
+      localStorage.removeItem(LEARN_STORAGE_KEY);
+      setStatus('Learning Memory geloescht.', 100);
+      if (learnLog) learnLog.textContent = 'Learning Memory geloescht.';
     }
 
     function solutionSummary(sol, countMap) {
@@ -2445,6 +3137,193 @@
       return tasks.slice(0, taskCount);
     }
 
+    function createRuleTrainingTasks(taskCount = 140) {
+      const tasks = [];
+      const seen = new Set();
+      const addTask = map => {
+        map.infra_lagerhaus = Math.max(1, map.infra_lagerhaus || 1);
+        const sig = taskSignature(map);
+        if (!sig || seen.has(sig)) return;
+        seen.add(sig);
+        tasks.push({ ...map });
+      };
+
+      for (let wheat = 3; wheat <= 7; wheat++) {
+        for (let bakery = 1; bakery <= 4; bakery++) addTask({ need_brot_weizenhof: wheat, need_brot_baeckerei: bakery });
+      }
+      for (let pig = 2; pig <= 5; pig++) {
+        for (let tannery = 1; tannery <= 4; tannery++) {
+          for (let sandal = 1; sandal <= 4; sandal++) addTask({ need_sandalen_schweinehof: pig, need_sandalen_gerberei: tannery, need_sandalen_sandalenmacher: sandal });
+        }
+      }
+      for (let wheat = 3; wheat <= 6; wheat++) {
+        for (let bakery = 1; bakery <= 3; bakery++) {
+          for (let pig = 2; pig <= 4; pig++) addTask({
+            need_brot_weizenhof: wheat,
+            need_brot_baeckerei: bakery,
+            need_sandalen_schweinehof: pig,
+            need_sandalen_gerberei: Math.max(1, Math.floor(pig * 0.7)),
+            need_sandalen_sandalenmacher: Math.max(1, Math.floor(pig * 0.7))
+          });
+        }
+      }
+      return tasks.slice(0, taskCount);
+    }
+
+    function policyCandidates() {
+      const d = { ...DEFAULT_SOLVER_POLICY };
+      return [
+        { ...d, id: 'default' },
+        { ...d, id: 'road_friendly', orderPriority: ['square', 'area', 'height', 'wide'], rectAreaPick: 210, rectRatioPick: 240, rectMergedCap: 320, fallbackCandidateCap: 120 },
+        { ...d, id: 'exact_deep', exactPlacementsCap: 180, exactOptionCap: 30, exactNodePerCluster: 6000, exactNodeMax: 42000, exactDeadlinePerCluster: 11, exactDeadlineMax: 90 },
+        { ...d, id: 'exact_wide', orderPriority: ['wide', 'area', 'square', 'height'], exactPlacementsCap: 170, rectAreaPick: 220, rectRatioPick: 180, rectMergedCap: 310 },
+        { ...d, id: 'compact_first', orderPriority: ['square', 'height', 'area', 'wide'], rectAreaPick: 170, rectRatioPick: 260, rectMergedCap: 280 },
+        { ...d, id: 'fallback_heavy', fallbackCandidateCap: 150, rectAreaPick: 220, rectRatioPick: 220, rectMergedCap: 340, trainFallbackRectCap: 80 },
+        { ...d, id: 'balanced_plus', exactPlacementsCap: 160, exactOptionCap: 28, exactNodePerCluster: 5200, rectAreaPick: 200, rectRatioPick: 220, rectMergedCap: 300 },
+        { ...d, id: 'strict_compact', orderPriority: ['area', 'square', 'height', 'wide'], exactPlacementsCap: 120, exactOptionCap: 20, rectAreaPick: 150, rectRatioPick: 180, rectMergedCap: 220 },
+      ];
+    }
+
+    function solveTaskWithPolicy(countMap, policy) {
+      const prevPolicy = solverPolicy;
+      const prevDiag = activeDiag;
+      solverPolicy = { ...DEFAULT_SOLVER_POLICY, ...policy };
+      activeDiag = { counts: {} };
+      try {
+        const taskDeadline = performance.now() + RULE_LEARN_TASK_BUDGET_MS;
+        const clusters = clustersFromCounts(countMap);
+        const solutions = [];
+        const add = sol => {
+          if (!sol) return;
+          if (solutions.some(s => s.bbox.w === sol.bbox.w && s.bbox.h === sol.bbox.h && Math.abs(s.score - sol.score) < 0.01)) return;
+          solutions.push(sol);
+          solutions.sort((a, b) => a.score - b.score);
+          solutions.splice(10);
+        };
+
+        add(buildFieldFirstRowsLayout(clusters));
+        add(buildFieldReservationLayout(clusters));
+        add(buildRoadFirstLayout(clusters));
+
+        const candidates = buildRectCandidates(clusters);
+        const orders = Array.isArray(policy.orderPriority) && policy.orderPriority.length ? policy.orderPriority : DEFAULT_SOLVER_POLICY.orderPriority;
+        const rectLimit = Math.min(candidates.length, Math.max(10, Math.min(32, policy.trainRectCap || DEFAULT_SOLVER_POLICY.trainRectCap)));
+
+        for (let i = 0; i < rectLimit; i++) {
+          if (performance.now() > taskDeadline) break;
+          const rect = candidates[i];
+          for (const order of orders) {
+            for (const rot of [false, true]) add(packExactRect(clusters, rect.w, rect.h, order, rot));
+          }
+        }
+
+        if (!solutions.length) {
+          const fallbackLimit = Math.min(candidates.length, Math.max(6, Math.min(20, policy.trainFallbackRectCap || DEFAULT_SOLVER_POLICY.trainFallbackRectCap)));
+          for (let i = 0; i < fallbackLimit; i++) {
+            if (performance.now() > taskDeadline) break;
+            const rect = candidates[i];
+            for (const order of orders) {
+              for (const rot of [false, true]) add(packSolidRect(clusters, rect.w, rect.h, order, rot));
+            }
+          }
+        }
+
+        if (!solutions.length) add(buildSpineFallback(clusters));
+        return { solution: solutions[0] || null, diag: { ...activeDiag.counts } };
+      } finally {
+        solverPolicy = prevPolicy;
+        activeDiag = prevDiag;
+      }
+    }
+
+    async function runPolicyTraining(taskCount = 140) {
+      cancelLearning = false;
+      cancelOptimize = false;
+      document.getElementById('cancelBtn').disabled = false;
+      const tasks = createRuleTrainingTasks(taskCount);
+      const profiles = policyCandidates().slice(0, RULE_LEARN_PROFILE_CAP);
+      const ranking = [];
+
+      setStatus(`Rule Learn startet: ${profiles.length} Profile, ${tasks.length} Aufgaben`, 0);
+      setOptimizeStatus({ rect: null, mode: 'Rule Learn', hits: 0, best: null });
+      updateLearningLog([`Rule Learn Start: ${profiles.length} Profile / ${tasks.length} Aufgaben`]);
+      await tick();
+
+      for (let p = 0; p < profiles.length; p++) {
+        if (cancelLearning || cancelOptimize) break;
+        const profile = profiles[p];
+        let solved = 0;
+        let areaSum = 0;
+        let scoreSum = 0;
+        const failReasons = {};
+        const t0 = performance.now();
+
+        for (let i = 0; i < tasks.length; i++) {
+          if (cancelLearning || cancelOptimize) break;
+          const out = solveTaskWithPolicy(tasks[i], profile);
+          if (out.solution) {
+            solved++;
+            areaSum += out.solution.area || out.solution.bbox?.area || 0;
+            scoreSum += out.solution.score || 0;
+          } else {
+            for (const [k, v] of Object.entries(out.diag || {})) failReasons[k] = (failReasons[k] || 0) + v;
+          }
+          if (i % 2 === 0) await tick();
+        }
+
+        const elapsedMs = Math.max(1, performance.now() - t0);
+        const avgArea = solved ? (areaSum / solved) : 999999;
+        const avgScore = solved ? (scoreSum / solved) : 999999999;
+        const solveRate = solved / Math.max(1, tasks.length);
+        const perfPenalty = elapsedMs / 1000;
+        const totalScore = solveRate * 100000 - avgArea * 1.3 - avgScore * 0.0007 - perfPenalty * 30;
+        ranking.push({ profile, solved, solveRate, avgArea, avgScore, elapsedMs, totalScore, failReasons });
+        ranking.sort((a, b) => b.totalScore - a.totalScore);
+
+        const best = ranking[0];
+        const pct = ((p + 1) / profiles.length) * 100;
+        setStatus(`Rule Learn ${p + 1}/${profiles.length} | Best ${best.profile.id} | solved ${best.solved}/${tasks.length}`, pct);
+        updateLearningLog([
+          `Rule Learn: ${p + 1}/${profiles.length}`,
+          `Aktuell: ${profile.id} -> ${solved}/${tasks.length}`,
+          `Best: ${best.profile.id} -> ${best.solved}/${tasks.length}`,
+          `Zeit: ${(elapsedMs / 1000).toFixed(1)}s`
+        ]);
+        await tick();
+      }
+
+      document.getElementById('cancelBtn').disabled = true;
+      if (cancelLearning || cancelOptimize) {
+        setStatus('Rule Learn abgebrochen.', 0);
+        setOptimizeStatus({ mode: 'Rule Learn Stop', hits: 0, best: null });
+        return;
+      }
+
+      ranking.sort((a, b) => b.totalScore - a.totalScore);
+      const best = ranking[0];
+      if (!best) {
+        setStatus('Rule Learn ohne Ergebnis.', 0);
+        return;
+      }
+
+      saveSolverPolicy(best.profile);
+      const topProfiles = ranking
+        .slice(0, 4)
+        .map(entry => entry.profile)
+        .filter(Boolean);
+      savePolicyPool(topProfiles);
+      const topFail = Object.entries(best.failReasons || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k}:${v}`).join(' | ');
+      setStatus(`Rule Learn fertig | Profil: ${best.profile.id} | solved ${best.solved}/${tasks.length}`, 100);
+      setOptimizeStatus({ mode: 'Rule Learn fertig', hits: best.solved, best: null });
+      updateOptLive(`Rule Learn fertig\nProfil: ${best.profile.id}\nSolved: ${best.solved}/${tasks.length}\n${topFail}`, null);
+      updateLearningLog([
+        `Rule Learn fertig`,
+        `Profil: ${best.profile.id}`,
+        `Solved: ${best.solved}/${tasks.length}`,
+        topFail || 'Keine Fehldaten'
+      ]);
+    }
+
     async function runLearningMode(taskCount = 500) {
       cancelLearning = false;
       cancelOptimize = false;
@@ -2507,10 +3386,203 @@
     async function optimize() {
       const clusters = expandCounts();
       if (!clusters.length) {
+        activeDiag = null;
         setStatus('Bitte zuerst links mit + mindestens ein Gebaeude zaehlen.', 0);
         setOptimizeStatus({ rect: null, mode: 'Keine Menge', hits: 0, best: null });
         return;
       }
+
+      const TARGET_SOLUTIONS = 8;
+      const MAX_SOLUTIONS = 16;
+      const MAX_INVALID_ATTEMPTS = 14;
+      const solutions = [];
+      const solutionKeys = new Set();
+      const invalidAttempts = [];
+      const invalidKeys = new Set();
+      latestInvalidSnapshot = null;
+      if (showDebugBtn) showDebugBtn.disabled = true;
+      debugOverlay = null;
+
+      const policyKey = policy => JSON.stringify({
+        id: policy?.id || '',
+        orderPriority: policy?.orderPriority || [],
+        exactPlacementsCap: policy?.exactPlacementsCap,
+        exactOptionCap: policy?.exactOptionCap,
+        rectMergedCap: policy?.rectMergedCap,
+        fallbackCandidateCap: policy?.fallbackCandidateCap
+      });
+
+      const solutionLayoutKey = sol => {
+        if (!sol?.bbox || !Array.isArray(sol.items)) return null;
+        const parts = sol.items
+          .map(it => `${it.kind || ''}:${it.id || ''}:${it.x},${it.y},${it.w},${it.h}`)
+          .sort();
+        return `${sol.bbox.w}x${sol.bbox.h}|${parts.join('|')}`;
+      };
+
+      const refreshSolutionKeys = () => {
+        solutionKeys.clear();
+        for (const sol of solutions) {
+          const key = solutionLayoutKey(sol) || `${sol.tag || ''}|${sol.bbox?.w || 0}x${sol.bbox?.h || 0}|${Math.round((sol.score || 0) * 100)}`;
+          solutionKeys.add(key);
+        }
+      };
+
+      const addSolution = (sol, tagPrefix = '') => {
+        if (!sol) return false;
+        const copy = tagPrefix ? { ...sol, tag: `${tagPrefix} ${sol.tag || ''}`.trim() } : sol;
+        const key = solutionLayoutKey(copy) || `${copy.tag || ''}|${copy.bbox?.w || 0}x${copy.bbox?.h || 0}|${Math.round((copy.score || 0) * 100)}`;
+        if (solutionKeys.has(key)) return false;
+        solutions.push(copy);
+        solutions.sort((a, b) => a.score - b.score);
+        solutions.splice(MAX_SOLUTIONS);
+        refreshSolutionKeys();
+        return true;
+      };
+
+      const captureDiagSnapshot = () => ({ ...(activeDiag?.counts || {}) });
+
+      const detectPrimaryNewReason = (before, after) => {
+        const prev = before || {};
+        const next = after || {};
+        let bestReason = '';
+        let bestDelta = 0;
+        for (const [reason, count] of Object.entries(next)) {
+          const delta = (count || 0) - (prev[reason] || 0);
+          if (delta > bestDelta) {
+            bestDelta = delta;
+            bestReason = reason;
+          }
+        }
+        return bestReason || '';
+      };
+
+      const recordInvalidAttempt = (entry = {}) => {
+        if (!entry?.reason || !entry?.rect) return;
+        const key = `${entry.pass}|${entry.rect.w}x${entry.rect.h}|${entry.order}|${entry.rot ? 'rot' : 'std'}|${entry.reason}`;
+        if (invalidKeys.has(key)) return;
+        invalidKeys.add(key);
+        const snapshot = {
+          pass: entry.pass || 'pass',
+          rect: `${entry.rect.w}x${entry.rect.h}`,
+          mode: `${entry.order || '-'}${entry.rot ? ' rot' : ''}`,
+          reason: entry.reason,
+          debug: entry.debug || null
+        };
+        invalidAttempts.push(snapshot);
+        if (snapshot?.debug?.items?.length) latestInvalidSnapshot = snapshot;
+        if (showDebugBtn) showDebugBtn.disabled = !latestInvalidSnapshot?.debug?.items?.length;
+        if (invalidAttempts.length > MAX_INVALID_ATTEMPTS) invalidAttempts.splice(0, invalidAttempts.length - MAX_INVALID_ATTEMPTS);
+        refreshInvalidAttemptsLive();
+      };
+
+      const invalidAttemptsSummaryText = (limit = 6) => {
+        if (!invalidAttempts.length) return 'Keine ungueltigen Versuche protokolliert.';
+        return invalidAttempts.slice(-limit).map((e, i) => `${i + 1}. ${e.pass} | ${e.rect} | ${e.mode} -> ${e.reason}`).join('\n');
+      };
+
+      const refreshInvalidAttemptsLive = () => {
+        const top = diagTopReasons(4);
+        const topBlock = top.length ? `Top-Fails:\n${top.join('\n')}\n\n` : '';
+        updateInvalidAttemptsLive(`${topBlock}${invalidAttemptsSummaryText(12)}`);
+      };
+
+      const runExactPass = async (passPolicy, passLabel, rectFactor = 1, stride = 6) => {
+        const prevPolicy = solverPolicy;
+        solverPolicy = { ...DEFAULT_SOLVER_POLICY, ...(passPolicy || {}) };
+        try {
+          const candidates = buildRectCandidates(clusters);
+          const orders = Array.isArray(solverPolicy.orderPriority) && solverPolicy.orderPriority.length ? solverPolicy.orderPriority : DEFAULT_SOLVER_POLICY.orderPriority;
+          const rawCap = Math.floor((solverPolicy.rectMergedCap || DEFAULT_SOLVER_POLICY.rectMergedCap) * rectFactor);
+          const rectCap = Math.max(12, Math.min(candidates.length, rawCap));
+          const passCandidates = candidates.slice(0, rectCap);
+          const passTotal = Math.max(1, passCandidates.length * orders.length * 2);
+          let passTries = 0;
+          let passHits = 0;
+
+          passRects:
+          for (const rect of passCandidates) {
+            if (solutions.length >= TARGET_SOLUTIONS && solutions[0] && rect.area > solutions[0].area + Math.max(100, solutions[0].area * 0.15)) break;
+            for (const order of orders) {
+              for (const rot of [false, true]) {
+                if (cancelOptimize) break passRects;
+                const mode = `${passLabel} ${order}${rot ? ' rot' : ''}`.trim();
+                setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
+                if (passTries % stride === 0) updateOptLive(`${passLabel}\n${rect.w}x${rect.h} | ${order}${rot ? ' rot' : ''}\nTreffer: ${solutions.length}`, solutions[0] || null);
+                const beforeDiag = captureDiagSnapshot();
+                const attemptDebug = {};
+                const sol = packExactRect(clusters, rect.w, rect.h, order, rot, attemptDebug);
+                if (sol && addSolution(sol, passLabel)) {
+                  passHits++;
+                  setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
+                  updateOptLive(`Neuer Kandidat (${passLabel})\n${sol.bbox.w}x${sol.bbox.h} | ${sol.tag}`, solutions[0]);
+                } else if (!sol) {
+                  const reason = detectPrimaryNewReason(beforeDiag, activeDiag?.counts || {});
+                  recordInvalidAttempt({ pass: passLabel, rect, order, rot, reason: reason || 'exact.failed_unknown', debug: attemptDebug });
+                }
+                passTries++;
+                if (passTries % stride === 0) {
+                  const bestText = solutions[0] ? ` | beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}` : '';
+                  setStatus(`${passLabel} ${passTries}/${passTotal}${bestText}`, Math.min(96, (passTries / passTotal) * 100));
+                  await tick();
+                }
+              }
+            }
+          }
+
+          return passHits;
+        } finally {
+          solverPolicy = prevPolicy;
+        }
+      };
+
+      const runFallbackPass = async (passPolicy, passLabel, capFactor = 1, stride = 6) => {
+        const prevPolicy = solverPolicy;
+        solverPolicy = { ...DEFAULT_SOLVER_POLICY, ...(passPolicy || {}) };
+        try {
+          const candidates = buildRectCandidates(clusters);
+          const orders = Array.isArray(solverPolicy.orderPriority) && solverPolicy.orderPriority.length ? solverPolicy.orderPriority : DEFAULT_SOLVER_POLICY.orderPriority;
+          const rawCap = Math.floor((solverPolicy.fallbackCandidateCap || DEFAULT_SOLVER_POLICY.fallbackCandidateCap) * capFactor);
+          const rectCap = Math.max(12, Math.min(candidates.length, rawCap));
+          const passCandidates = candidates.slice(0, rectCap);
+          const passTotal = Math.max(1, passCandidates.length * orders.length * 2);
+          let passTries = 0;
+          let passHits = 0;
+
+          fallbackRects:
+          for (const rect of passCandidates) {
+            for (const order of orders) {
+              for (const rot of [false, true]) {
+                if (cancelOptimize) break fallbackRects;
+                const mode = `${passLabel} ${order}${rot ? ' rot' : ''}`.trim();
+                setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
+                if (passTries % stride === 0) updateOptLive(`${passLabel}\n${rect.w}x${rect.h} | ${order}${rot ? ' rot' : ''}`, solutions[0] || null);
+                const beforeDiag = captureDiagSnapshot();
+                const attemptDebug = {};
+                const sol = packSolidRect(clusters, rect.w, rect.h, order, rot, attemptDebug);
+                if (sol && addSolution(sol, `${passLabel} fallback`)) {
+                  passHits++;
+                  setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
+                  updateOptLive(`Fallback-Kandidat (${passLabel})\n${sol.bbox.w}x${sol.bbox.h}`, solutions[0]);
+                } else if (!sol) {
+                  const reason = detectPrimaryNewReason(beforeDiag, activeDiag?.counts || {});
+                  recordInvalidAttempt({ pass: passLabel, rect, order, rot, reason: reason || 'fallback.failed_unknown', debug: attemptDebug });
+                }
+                passTries++;
+                if (passTries % stride === 0) {
+                  const bestText = solutions[0] ? ` | beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}` : '';
+                  setStatus(`${passLabel} ${passTries}/${passTotal}${bestText}`, Math.min(97, (passTries / passTotal) * 100));
+                  await tick();
+                }
+              }
+            }
+          }
+
+          return passHits;
+        } finally {
+          solverPolicy = prevPolicy;
+        }
+      };
 
       cancelOptimize = false;
       document.getElementById('cancelBtn').disabled = false;
@@ -2518,21 +3590,18 @@
       setStatus('Optimizer startet...', 0);
       setOptimizeStatus({ rect: null, mode: 'Start', hits: 0, best: null });
       updateOptLive('Start...\nMengen werden analysiert.');
+      updateInvalidAttemptsLive('Noch keine ungueltigen Versuche.');
       await tick();
 
-      const candidates = buildRectCandidates(clusters);
-      const orders = ['area', 'square', 'height', 'wide'];
-      const solutions = [];
-      let tries = 0;
-      const totalTries = Math.max(1, candidates.length * orders.length * 2);
+      const policy = currentSolverPolicy();
+      activeDiag = { counts: {} };
 
       setStatus('Berechne Feldbedarf und puzzle Gebaeude...', 2);
       setOptimizeStatus({ rect: null, mode: 'Field-First', hits: 0, best: null });
       updateOptLive('Field-First\nFeldbedarf wird in kompakte Module uebersetzt.');
       await tick();
       const fieldFirst = buildFieldFirstRowsLayout(clusters);
-      if (fieldFirst) {
-        solutions.push(fieldFirst);
+      if (addSolution(fieldFirst, 'field-first')) {
         setOptimizeStatus({ rect: fieldFirst.bbox, mode: 'Field-First', hits: solutions.length, best: fieldFirst });
         updateOptLive(`Field-First Treffer\n${fieldFirst.bbox.w}x${fieldFirst.bbox.h} | Score ${Math.round(fieldFirst.score)}`, fieldFirst);
       }
@@ -2542,51 +3611,58 @@
       updateOptLive('Feld-Reservierung\nTeste alternative Reservierungsformen.', solutions[0] || null);
       await tick();
       const fieldReservation = buildFieldReservationLayout(clusters);
-      if (fieldReservation) {
-        solutions.push(fieldReservation);
-        solutions.sort((a, b) => a.score - b.score);
-        solutions.splice(10);
-        setOptimizeStatus({ rect: fieldReservation.bbox, mode: 'Feld-Reservierung', hits: solutions.length, best: fieldReservation });
+      if (addSolution(fieldReservation, 'field-reservation')) {
+        setOptimizeStatus({ rect: fieldReservation.bbox, mode: 'Feld-Reservierung', hits: solutions.length, best: solutions[0] || null });
         updateOptLive(`Feld-Reservierung Treffer\n${fieldReservation.bbox.w}x${fieldReservation.bbox.h} | Beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}`, solutions[0]);
       }
 
       setStatus('Baue Road-First Layout...', 4);
       setOptimizeStatus({ rect: null, mode: 'Road-First', hits: solutions.length, best: solutions[0] || null });
-      updateOptLive('Road-First\nStraßengeruest wird getestet.', solutions[0] || null);
+      updateOptLive('Road-First\nStrassengeruest wird getestet.', solutions[0] || null);
       await tick();
       const roadFirst = buildRoadFirstLayout(clusters);
-      if (roadFirst) {
-        solutions.push(roadFirst);
-        solutions.sort((a, b) => a.score - b.score);
-        solutions.splice(10);
-        setOptimizeStatus({ rect: roadFirst.bbox, mode: 'Road-First', hits: solutions.length, best: roadFirst });
+      if (addSolution(roadFirst, 'road-first')) {
+        setOptimizeStatus({ rect: roadFirst.bbox, mode: 'Road-First', hits: solutions.length, best: solutions[0] || null });
         updateOptLive(`Road-First Treffer\n${roadFirst.bbox.w}x${roadFirst.bbox.h} | Beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}`, solutions[0]);
       }
 
-      searchRects:
-      for (const rect of candidates) {
-        if (solutions.length >= 8 && rect.area > solutions[0].area + Math.max(80, solutions[0].area * 0.12)) break;
-        for (const order of orders) {
-          for (const rot of [false, true]) {
-            if (cancelOptimize) break searchRects;
-            const mode = `${order}${rot ? ' rot' : ''}`;
-            setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
-            if (tries % 4 === 0) updateOptLive(`Constraint-Suche\n${rect.w}x${rect.h} | ${mode}\nTreffer: ${solutions.length}`, solutions[0] || null);
-            const sol = packExactRect(clusters, rect.w, rect.h, order, rot);
-            if (sol) {
-              const duplicate = solutions.some(s => s.bbox.w === sol.bbox.w && s.bbox.h === sol.bbox.h && Math.abs(s.score - sol.score) < 0.01);
-              if (!duplicate) solutions.push(sol);
-              solutions.sort((a, b) => a.score - b.score);
-              solutions.splice(10);
-              setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
-              updateOptLive(`Neuer Kandidat\n${sol.bbox.w}x${sol.bbox.h} | ${sol.tag}`, solutions[0]);
-            }
-            tries++;
-            if (tries % 4 === 0) {
-              const bestText = solutions[0] ? ` | beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}` : '';
-              setStatus(`Constraint-Suche ${tries}/${totalTries}${bestText}`, tries / totalTries * 100);
-              await tick();
-            }
+      await runExactPass(policy, 'Constraint-Suche', 1, 4);
+
+      if (cancelOptimize) {
+        document.getElementById('cancelBtn').disabled = true;
+        setStatus('Optimizer abgebrochen.', 0);
+        setOptimizeStatus({ mode: 'Abbruch', hits: solutions.length, best: solutions[0] || null });
+        updateOptLive('Abgebrochen.', solutions[0] || null);
+        setOptimizerRunning(false);
+        activeDiag = null;
+        return;
+      }
+
+      if (!solutions.length) {
+        setStatus('Constraint-Suche ohne Treffer, starte Ersatzsuche...', 0);
+        setOptimizeStatus({ rect: null, mode: 'Fallback', hits: 0, best: null });
+        updateOptLive('Ersatzsuche\nNoch kein valider Kandidat.', null);
+        await tick();
+        await runFallbackPass(policy, 'Ersatzsuche', 1, 4);
+      }
+
+      if (!cancelOptimize && solutions.length < TARGET_SOLUTIONS) {
+        const sequence = getOptimizePolicySequence();
+        const baseKey = policyKey(policy);
+        const altPolicies = sequence.filter(p => policyKey(p) !== baseKey);
+
+        for (let i = 0; i < altPolicies.length; i++) {
+          if (cancelOptimize || solutions.length >= TARGET_SOLUTIONS) break;
+          const alt = altPolicies[i];
+          const name = alt.id || `profil-${i + 1}`;
+          const before = solutions.length;
+          setStatus(`Profil-Sweep ${i + 1}/${altPolicies.length}: ${name}`, 10 + i * 8);
+          updateOptLive(`Profil-Sweep\n${name}\nTreffer bisher: ${solutions.length}`, solutions[0] || null);
+          await tick();
+
+          await runExactPass(alt, `Sweep ${name}`, 0.45, 8);
+          if (!cancelOptimize && solutions.length < TARGET_SOLUTIONS && solutions.length === before) {
+            await runFallbackPass(alt, `Sweep ${name}`, 0.45, 8);
           }
         }
       }
@@ -2597,55 +3673,7 @@
         setOptimizeStatus({ mode: 'Abbruch', hits: solutions.length, best: solutions[0] || null });
         updateOptLive('Abgebrochen.', solutions[0] || null);
         setOptimizerRunning(false);
-        return;
-      }
-
-      if (!solutions.length) {
-        document.getElementById('cancelBtn').disabled = false;
-        setStatus('Constraint-Suche ohne Treffer, starte Ersatzsuche...', 0);
-        setOptimizeStatus({ rect: null, mode: 'Fallback', hits: 0, best: null });
-        updateOptLive('Ersatzsuche\nNoch kein valider Kandidat.', null);
-        await tick();
-
-        let fallbackTries = 0;
-        const fallbackCandidates = candidates.slice(0, 80);
-        const fallbackTotal = Math.max(1, fallbackCandidates.length * orders.length * 2);
-        fallbackRects:
-        for (const rect of fallbackCandidates) {
-          for (const order of orders) {
-            for (const rot of [false, true]) {
-              if (cancelOptimize) break fallbackRects;
-              const mode = `fallback ${order}${rot ? ' rot' : ''}`;
-              setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
-              if (fallbackTries % 4 === 0) updateOptLive(`Ersatzsuche\n${rect.w}x${rect.h} | ${mode}`, solutions[0] || null);
-              const sol = packSolidRect(clusters, rect.w, rect.h, order, rot);
-              if (sol) {
-                sol.tag = `fallback ${sol.tag}`;
-                const duplicate = solutions.some(s => s.bbox.w === sol.bbox.w && s.bbox.h === sol.bbox.h && Math.abs(s.score - sol.score) < 0.01);
-                if (!duplicate) solutions.push(sol);
-                solutions.sort((a, b) => a.score - b.score);
-                solutions.splice(10);
-                setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
-                updateOptLive(`Fallback Treffer\n${sol.bbox.w}x${sol.bbox.h}`, solutions[0]);
-              }
-              fallbackTries++;
-              if (fallbackTries % 4 === 0) {
-                const bestText = solutions[0] ? ` | beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}` : '';
-                setStatus(`Ersatzsuche ${fallbackTries}/${fallbackTotal}${bestText}`, fallbackTries / fallbackTotal * 100);
-                await tick();
-              }
-            }
-          }
-        }
-        document.getElementById('cancelBtn').disabled = true;
-      }
-
-      if (cancelOptimize) {
-        setStatus('Optimizer abgebrochen.', 0);
-        setOptimizeStatus({ mode: 'Abbruch', hits: solutions.length, best: solutions[0] || null });
-        document.getElementById('cancelBtn').disabled = true;
-        updateOptLive('Abgebrochen.', solutions[0] || null);
-        setOptimizerRunning(false);
+        activeDiag = null;
         return;
       }
 
@@ -2655,23 +3683,32 @@
         updateOptLive('Basislayout\nLetzte Sicherheitsstrategie.', null);
         await tick();
         const base = buildSpineFallback(clusters);
-        if (base) {
-          solutions.push(base);
+        if (addSolution(base, 'spine fallback')) {
           setOptimizeStatus({ rect: base.bbox, mode: 'Basislayout', hits: 1, best: base });
-          updateOptLive(`Basislayout Treffer\n${base.bbox.w}x${base.bbox.h}`, base);
+          updateOptLive(`Basislayout Treffer\n${base.bbox.w}x${base.bbox.h}\n\nLetzte ungueltige Versuche:\n${invalidAttemptsSummaryText(5)}`, base);
+          refreshInvalidAttemptsLive();
         } else {
-          setStatus('Keine Loesung fuer das 80x80 Raster gefunden.', 0);
+          const top = diagTopReasons(6);
+          const reasonText = top.length ? ` | Top-Fails: ${top.join(' | ')}` : '';
+          setStatus(`Keine Loesung fuer das 80x80 Raster gefunden.${reasonText}`, 0);
           setOptimizeStatus({ mode: 'Keine Treffer', hits: 0, best: null });
-          updateOptLive('Keine Loesung gefunden.', null);
+          updateOptLive(`Keine Loesung gefunden.\n${top.join('\n')}\n\nLetzte ungueltige Versuche:\n${invalidAttemptsSummaryText(6)}`, null);
+          refreshInvalidAttemptsLive();
           setOptimizerRunning(false);
+          activeDiag = null;
           return;
         }
       }
-      setStatus(`Fertig. Beste Loesung: ${solutions[0].bbox.w}x${solutions[0].bbox.h}.`, 100);
-      setOptimizeStatus({ rect: solutions[0].bbox, mode: 'Fertig', hits: solutions.length, best: solutions[0] });
-      updateOptLive(`Fertig\nBeste: ${solutions[0].bbox.w}x${solutions[0].bbox.h}\n${solutions[0].tag}`, solutions[0]);
-      applySolution(solutions[0]);
-      showSolutions(solutions);
+
+      solutions.sort((a, b) => a.score - b.score);
+      const finalList = solutions.slice(0, 10);
+      setStatus(`Fertig. ${finalList.length} Loesungen gefunden | Beste ${finalList[0].bbox.w}x${finalList[0].bbox.h}.`, 100);
+      setOptimizeStatus({ rect: finalList[0].bbox, mode: 'Fertig', hits: finalList.length, best: finalList[0] });
+      updateOptLive(`Fertig\nBeste: ${finalList[0].bbox.w}x${finalList[0].bbox.h}\nTreffer: ${finalList.length}\n${finalList[0].tag}\n\nLetzte ungueltige Versuche:\n${invalidAttemptsSummaryText(6)}`, finalList[0]);
+      refreshInvalidAttemptsLive();
+      activeDiag = null;
+      applySolution(finalList[0]);
+      showSolutions(finalList);
       setOptimizerRunning(false);
     }
 
@@ -2806,10 +3843,28 @@
       if (learnCountInput) learnCountInput.value = String(runs);
       runLearningMode(runs);
     });
+    document.getElementById('learnPolicyBtn').addEventListener('click', () => {
+      const requested = Math.floor(Number(learnCountInput?.value) || RULE_LEARN_DEFAULT_TASKS);
+      const runs = Math.max(RULE_LEARN_MIN_TASKS, Math.min(RULE_LEARN_MAX_TASKS, requested));
+      if (learnCountInput) learnCountInput.value = String(runs);
+      runPolicyTraining(runs);
+    });
     document.getElementById('learnExportBtn').addEventListener('click', exportLearningMemory);
+    document.getElementById('learnResetBtn').addEventListener('click', resetLearningMemory);
     document.getElementById('cancelBtn').addEventListener('click', () => {
       cancelOptimize = true;
       cancelLearning = true;
+    });
+    showDebugBtn?.addEventListener('click', () => {
+      if (!latestInvalidSnapshot) {
+        setStatus('Kein Debug-Snapshot verfuegbar.', 0);
+        return;
+      }
+      showDebugSnapshot(latestInvalidSnapshot);
+    });
+    clearDebugBtn?.addEventListener('click', () => {
+      clearDebugOverlay();
+      setStatus('Debug-Overlay deaktiviert.', Number(progressEl?.style?.width?.replace('%', '')) || 0);
     });
     document.getElementById('clearBtn').addEventListener('click', () => {
       if (!confirm('Karte wirklich leeren?')) return;
@@ -2845,8 +3900,10 @@
     });
 
     buildCatalog();
+    if (showDebugBtn) showDebugBtn.disabled = true;
     selectTool('infra_lagerhaus');
     render();
   </script>
 </body>
 </html>
+
