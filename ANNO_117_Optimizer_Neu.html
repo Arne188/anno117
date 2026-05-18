@@ -301,12 +301,21 @@
       display: flex;
       gap: 6px;
       margin-bottom: 6px;
+      align-items: center;
+      flex-wrap: wrap;
     }
 
     .diag-tools .btn {
       font-size: 11px;
       padding: 5px 7px;
       min-height: 28px;
+    }
+
+    #debugNavInfo {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--muted);
+      padding: 0 2px;
     }
 
     #invalidAttemptsText {
@@ -750,7 +759,10 @@
         <strong>Ungueltige Versuche (live)</strong>
         <div class="diag-tools">
           <button id="showDebugBtn" class="btn">Letzten Zeigen</button>
+          <button id="prevDebugBtn" class="btn">Vorheriger</button>
+          <button id="nextDebugBtn" class="btn">Naechster</button>
           <button id="clearDebugBtn" class="btn">Debug Aus</button>
+          <span id="debugNavInfo">0/0</span>
         </div>
         <div id="invalidAttemptsText">Noch keine Diagnosedaten.</div>
       </div>
@@ -794,18 +806,24 @@
     const DEFAULT_SOLVER_POLICY = {
       id: 'default',
       orderPriority: ['area', 'square', 'height', 'wide'],
-      exactPlacementsCap: 140,
-      exactOptionCap: 24,
-      exactNodeMin: 1800,
-      exactNodeMax: 26000,
-      exactNodePerCluster: 4200,
+      exactPlacementsCap: 120,
+      exactOptionCap: 20,
+      exactNodeMin: 1500,
+      exactNodeMax: 18000,
+      exactNodePerCluster: 3200,
       exactDeadlineMin: 18,
       exactDeadlineMax: 55,
       exactDeadlinePerCluster: 8,
-      rectAreaPick: 180,
-      rectRatioPick: 180,
-      rectMergedCap: 260,
-      fallbackCandidateCap: 80,
+      rectAreaPick: 140,
+      rectRatioPick: 140,
+      rectMergedCap: 180,
+      fallbackCandidateCap: 60,
+      composeAttemptsExact: 3,
+      composeAttemptsFallback: 4,
+      maxPassTriesExact: 520,
+      maxPassTriesFallback: 340,
+      altSweepProfilesWhenHit: 2,
+      altSweepProfilesWhenEmpty: 4,
       trainRectCap: 120,
       trainFallbackRectCap: 50
     };
@@ -819,6 +837,7 @@
       'field-first': -1800,
       'field-reservation': -450,
       'road-first': 350,
+      'road-chain': -520,
       'exact': 900,
       'fallback': 6500,
       'spine fallback': 9000,
@@ -895,7 +914,10 @@
     const optLiveText = document.getElementById('optLiveText');
     const invalidAttemptsText = document.getElementById('invalidAttemptsText');
     const showDebugBtn = document.getElementById('showDebugBtn');
+    const prevDebugBtn = document.getElementById('prevDebugBtn');
+    const nextDebugBtn = document.getElementById('nextDebugBtn');
     const clearDebugBtn = document.getElementById('clearDebugBtn');
+    const debugNavInfo = document.getElementById('debugNavInfo');
     const solutionGrid = document.getElementById('solutionGrid');
     const resultsEl = document.getElementById('results');
     const fileInput = document.getElementById('fileInput');
@@ -909,14 +931,40 @@
     let activeDiag = null;
     let solverPolicy = loadSolverPolicy();
     let latestInvalidSnapshot = null;
+    let latestInvalidSnapshots = [];
+    let latestInvalidCursor = -1;
     let debugOverlay = null;
 
     function uid() {
       return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     }
 
+    function clampNumber(value, min, max, fallback) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return fallback;
+      return Math.max(min, Math.min(max, n));
+    }
+
     function currentSolverPolicy() {
-      return { ...DEFAULT_SOLVER_POLICY, ...(solverPolicy || {}) };
+      const merged = { ...DEFAULT_SOLVER_POLICY, ...(solverPolicy || {}) };
+      return {
+        ...merged,
+        exactPlacementsCap: clampNumber(merged.exactPlacementsCap, 40, 220, DEFAULT_SOLVER_POLICY.exactPlacementsCap),
+        exactOptionCap: clampNumber(merged.exactOptionCap, 8, 40, DEFAULT_SOLVER_POLICY.exactOptionCap),
+        exactNodeMin: clampNumber(merged.exactNodeMin, 600, 12000, DEFAULT_SOLVER_POLICY.exactNodeMin),
+        exactNodeMax: clampNumber(merged.exactNodeMax, 2000, 50000, DEFAULT_SOLVER_POLICY.exactNodeMax),
+        exactNodePerCluster: clampNumber(merged.exactNodePerCluster, 1200, 7000, DEFAULT_SOLVER_POLICY.exactNodePerCluster),
+        rectAreaPick: clampNumber(merged.rectAreaPick, 50, 280, DEFAULT_SOLVER_POLICY.rectAreaPick),
+        rectRatioPick: clampNumber(merged.rectRatioPick, 50, 280, DEFAULT_SOLVER_POLICY.rectRatioPick),
+        rectMergedCap: clampNumber(merged.rectMergedCap, 60, 320, DEFAULT_SOLVER_POLICY.rectMergedCap),
+        fallbackCandidateCap: clampNumber(merged.fallbackCandidateCap, 20, 180, DEFAULT_SOLVER_POLICY.fallbackCandidateCap),
+        composeAttemptsExact: clampNumber(merged.composeAttemptsExact, 1, 8, DEFAULT_SOLVER_POLICY.composeAttemptsExact),
+        composeAttemptsFallback: clampNumber(merged.composeAttemptsFallback, 1, 10, DEFAULT_SOLVER_POLICY.composeAttemptsFallback),
+        maxPassTriesExact: clampNumber(merged.maxPassTriesExact, 80, 2400, DEFAULT_SOLVER_POLICY.maxPassTriesExact),
+        maxPassTriesFallback: clampNumber(merged.maxPassTriesFallback, 60, 1600, DEFAULT_SOLVER_POLICY.maxPassTriesFallback),
+        altSweepProfilesWhenHit: clampNumber(merged.altSweepProfilesWhenHit, 0, 4, DEFAULT_SOLVER_POLICY.altSweepProfilesWhenHit),
+        altSweepProfilesWhenEmpty: clampNumber(merged.altSweepProfilesWhenEmpty, 0, 4, DEFAULT_SOLVER_POLICY.altSweepProfilesWhenEmpty),
+      };
     }
 
     function loadSolverPolicy() {
@@ -1035,6 +1083,14 @@
       if (invalidAttemptsText) invalidAttemptsText.textContent = text;
     }
 
+    function updateDebugNavState() {
+      const total = latestInvalidSnapshots.length;
+      if (debugNavInfo) debugNavInfo.textContent = total ? `${latestInvalidCursor + 1}/${total}` : '0/0';
+      if (showDebugBtn) showDebugBtn.disabled = total === 0;
+      if (prevDebugBtn) prevDebugBtn.disabled = total === 0 || latestInvalidCursor <= 0;
+      if (nextDebugBtn) nextDebugBtn.disabled = total === 0 || latestInvalidCursor >= total - 1;
+    }
+
     function clearDebugOverlay() {
       debugOverlay = null;
       render();
@@ -1075,8 +1131,23 @@
       }
       debugOverlay = { items: baseItems.concat(markerItems), title: `${snapshot.pass} ${snapshot.rect} ${snapshot.mode} -> ${snapshot.reason}` };
       render();
+      const bb = boundingBox(debugOverlay.items);
+      if (bb) {
+        const wrap = mapEl.closest('.map-wrap');
+        if (wrap) {
+          const targetX = Math.max(0, (bb.minX + bb.w / 2) * CELL - wrap.clientWidth / 2);
+          const targetY = Math.max(0, (bb.minY + bb.h / 2) * CELL - wrap.clientHeight / 2);
+          wrap.scrollTo({ left: targetX, top: targetY, behavior: 'smooth' });
+        }
+      }
       if (mapHint) mapHint.textContent = `Debug: ${debugOverlay.title}`;
       setStatus(`Debug-Overlay: ${debugOverlay.title}`, Number(progressEl?.style?.width?.replace('%', '')) || 0);
+    }
+
+    function showInvalidSnapshotByCursor() {
+      if (!latestInvalidSnapshots.length || latestInvalidCursor < 0 || latestInvalidCursor >= latestInvalidSnapshots.length) return;
+      showDebugSnapshot(latestInvalidSnapshots[latestInvalidCursor]);
+      updateDebugNavState();
     }
 
     function tick() {
@@ -1502,28 +1573,50 @@
         for (const p of pl.cluster.parts) packed.push({ ...p, x: pl.x + p.x, y: pl.y + p.y });
       }
 
-      const all = packed.map(it => ({ ...it }));
-      if (!placeFlexibleFields(all, width, height)) {
-        diagHit('exact.fields_failed');
+      const buildingTiles = new Set();
+      const key = (x, y) => x + ',' + y;
+      for (const it of packed) {
+        if (it.kind !== 'building') continue;
+        for (let y = it.y; y < it.y + it.h; y++) {
+          for (let x = it.x; x < it.x + it.w; x++) buildingTiles.add(key(x, y));
+        }
+      }
+      function hasFreeAdjacentTile(rect) {
+        for (let x = rect.x; x < rect.x + rect.w; x++) {
+          if (!buildingTiles.has(key(x, rect.y - 1))) return true;
+          if (!buildingTiles.has(key(x, rect.y + rect.h))) return true;
+        }
+        for (let y = rect.y; y < rect.y + rect.h; y++) {
+          if (!buildingTiles.has(key(rect.x - 1, y))) return true;
+          if (!buildingTiles.has(key(rect.x + rect.w, y))) return true;
+        }
+        return false;
+      }
+      if (packed.some(it => it.kind === 'building' && !hasFreeAdjacentTile(it))) {
+        diagHit('exact.no_free_adjacent_for_building');
         if (debugSink) {
-          debugSink.reason = 'exact.fields_failed';
-          debugSink.items = cloneDebugItems(all);
+          debugSink.reason = 'exact.no_free_adjacent_for_building';
+          debugSink.items = cloneDebugItems(packed);
           debugSink.meta = { width, height };
         }
         return null;
       }
-      const roadsDebug = debugSink ? {} : null;
-      const roads = addRoadsInRect(all, width, height, roadsDebug);
-      if (!roads) {
-        diagHit('exact.roads_failed');
+
+      const composeDebug = debugSink ? {} : null;
+      const composed = composeRoadFieldLayout(packed, width, height, composeDebug, {
+        maxAttempts: Math.max(1, policy.composeAttemptsExact || DEFAULT_SOLVER_POLICY.composeAttemptsExact || 3)
+      });
+      if (!composed.ok) {
+        if (composed.failKind === 'fields') diagHit('exact.fields_failed');
+        else diagHit('exact.roads_failed');
         if (debugSink) {
-          debugSink.reason = roadsDebug?.reason || 'exact.roads_failed';
-          debugSink.items = cloneDebugItems(roadsDebug?.items || all);
-          debugSink.meta = { width, height, ...(roadsDebug?.meta || {}) };
+          debugSink.reason = composeDebug?.reason || `exact.${composed.failKind || 'roads'}_failed`;
+          debugSink.items = cloneDebugItems(composeDebug?.items || packed);
+          debugSink.meta = { width, height, ...(composeDebug?.meta || {}) };
         }
         return null;
       }
-      all.push(...roads);
+      const all = composed.items;
       fillSolidPads(all, width, height);
       const bbox = boundingBox(all);
       if (!bbox || bbox.w !== width || bbox.h !== height) {
@@ -1616,6 +1709,391 @@
       if (!validateRoadRules(itemsLocal)) return null;
       if (!validateSolidRectangle(itemsLocal, width, height)) return null;
       return scoreSolution(itemsLocal, 'spine fallback');
+    }
+
+    function buildRoadChainLayout(clusters) {
+      const rectCandidates = buildRectCandidates(clusters).slice(0, 56);
+      if (!rectCandidates.length) return null;
+
+      const key = (x, y) => x + ',' + y;
+      const parse = value => {
+        const comma = value.indexOf(',');
+        return { x: Number(value.slice(0, comma)), y: Number(value.slice(comma + 1)) };
+      };
+
+      function normalizePlacedVariant(variant) {
+        const building = variant.parts.find(p => p.kind === 'building');
+        if (!building) return null;
+        const shifted = variant.parts.map(p => ({
+          ...p,
+          x: p.x - building.x,
+          y: p.y - building.y
+        }));
+        const b = shifted.find(p => p.kind === 'building');
+        return {
+          w: variant.w,
+          h: variant.h,
+          parts: shifted,
+          building: b
+        };
+      }
+
+      function clusterFieldArea(cluster) {
+        const building = cluster.parts.find(p => p.kind === 'building');
+        const farm = building?.farmFields;
+        if (!farm) return 0;
+        const cnt = Math.max(0, Number(farm.count) || 0);
+        const unitW = Math.max(1, Number(farm.unitW) || 1);
+        const unitH = Math.max(1, Number(farm.unitH) || 1);
+        return cnt * unitW * unitH;
+      }
+
+      const modules = clusters
+        .map(cluster => {
+          const variants = clusterVariantsFor(cluster, true, GRID_W, GRID_H, 14)
+            .map(normalizePlacedVariant)
+            .filter(Boolean)
+            .slice(0, 4);
+          const building = cluster.parts.find(p => p.kind === 'building');
+          const fieldArea = clusterFieldArea(cluster);
+          return {
+            cluster,
+            building,
+            variants,
+            fieldArea,
+            isWarehouse: cluster.id.startsWith('infra_lagerhaus-')
+          };
+        })
+        .filter(m => m.building && m.variants.length);
+
+      const warehouseMod = modules.find(m => m.isWarehouse) || null;
+      if (!warehouseMod) return null;
+
+      function modulePriority(mod) {
+        if (mod.isWarehouse) return -1;
+        if (mod.fieldArea <= 0) return 0;
+        if (mod.fieldArea <= 40) return 1;
+        if (mod.fieldArea <= 120) return 2;
+        return 3;
+      }
+
+      const orderedModules = modules
+        .filter(m => !m.isWarehouse)
+        .sort((a, b) => {
+          const pa = modulePriority(a);
+          const pb = modulePriority(b);
+          if (pa !== pb) return pa - pb;
+          if (pa === 0) return b.building.w * b.building.h - a.building.w * a.building.h;
+          if (pa >= 1) return a.fieldArea - b.fieldArea || b.building.w * b.building.h - a.building.w * a.building.h;
+          return 0;
+        });
+
+      function anchorsForRect(rect, width, height, blockedSet) {
+        const out = [];
+        const push = (x, y) => {
+          if (x < 0 || y < 0 || x >= width || y >= height) return;
+          const k = key(x, y);
+          if (blockedSet.has(k)) return;
+          out.push(k);
+        };
+        for (let x = rect.x; x < rect.x + rect.w; x++) {
+          push(x, rect.y - 1);
+          push(x, rect.y + rect.h);
+        }
+        for (let y = rect.y; y < rect.y + rect.h; y++) {
+          push(rect.x - 1, y);
+          push(rect.x + rect.w, y);
+        }
+        return [...new Set(out)];
+      }
+
+      function buildParentMap(roadSet, width, height, blockedSet) {
+        const parent = new Map();
+        const queue = [];
+        for (const start of roadSet) {
+          if (parent.has(start)) continue;
+          parent.set(start, null);
+          queue.push(start);
+        }
+        for (let i = 0; i < queue.length; i++) {
+          const cur = queue[i];
+          const p = parse(cur);
+          const next = [
+            key(p.x - 1, p.y),
+            key(p.x + 1, p.y),
+            key(p.x, p.y - 1),
+            key(p.x, p.y + 1)
+          ];
+          for (const nk of next) {
+            const np = parse(nk);
+            if (np.x < 0 || np.y < 0 || np.x >= width || np.y >= height) continue;
+            if (blockedSet.has(nk) || parent.has(nk)) continue;
+            parent.set(nk, cur);
+            queue.push(nk);
+          }
+        }
+        return parent;
+      }
+
+      function connectRectToRoad(rect, roadSet, width, height, blockedSet) {
+        const anchors = anchorsForRect(rect, width, height, blockedSet);
+        if (!anchors.length) return false;
+        for (const a of anchors) {
+          if (roadSet.has(a)) return true;
+        }
+        const parent = buildParentMap(roadSet, width, height, blockedSet);
+        let hit = null;
+        for (const a of anchors) {
+          if (parent.has(a)) {
+            hit = a;
+            break;
+          }
+        }
+        if (!hit) return false;
+        for (let cur = hit; cur; cur = parent.get(cur)) roadSet.add(cur);
+        return true;
+      }
+
+      function canPlaceRect(rect, width, height, occupiedSet, roadSet) {
+        if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > width || rect.y + rect.h > height) return false;
+        for (let y = rect.y; y < rect.y + rect.h; y++) {
+          for (let x = rect.x; x < rect.x + rect.w; x++) {
+            const k = key(x, y);
+            if (occupiedSet.has(k) || roadSet.has(k)) return false;
+          }
+        }
+        return true;
+      }
+
+      function markRect(rect, set) {
+        for (let y = rect.y; y < rect.y + rect.h; y++) {
+          for (let x = rect.x; x < rect.x + rect.w; x++) set.add(key(x, y));
+        }
+      }
+
+      function placeImmediateSmallFarmFields(buildingItem, occupiedSet, roadSet, itemsOut, width, height) {
+        const farm = buildingItem.farmFields;
+        if (!farm) return 0;
+        const total = Math.max(0, Math.floor(Number(farm.count) || 0));
+        const fw = Math.max(1, Number(farm.unitW) || 1);
+        const fh = Math.max(1, Number(farm.unitH) || 1);
+        if (!total || total > 16) return 0;
+
+        const own = [];
+        const centerX = buildingItem.x + buildingItem.w / 2;
+        const centerY = buildingItem.y + buildingItem.h / 2;
+        const touchesByEdge = (a, b) => (
+          (a.x + a.w === b.x && a.y < b.y + b.h && a.y + a.h > b.y) ||
+          (b.x + b.w === a.x && a.y < b.y + b.h && a.y + a.h > b.y) ||
+          (a.y + a.h === b.y && a.x < b.x + b.w && a.x + a.w > b.x) ||
+          (b.y + b.h === a.y && a.x < b.x + b.w && a.x + a.w > b.x)
+        );
+
+        function canPlaceField(r) {
+          if (r.x < 0 || r.y < 0 || r.x + r.w > width || r.y + r.h > height) return false;
+          for (let y = r.y; y < r.y + r.h; y++) {
+            for (let x = r.x; x < r.x + r.w; x++) {
+              const k = key(x, y);
+              if (occupiedSet.has(k) || roadSet.has(k)) return false;
+            }
+          }
+          return true;
+        }
+
+        function candidateSlots(ref) {
+          const set = [];
+          const add = (x, y) => set.push({ x, y, w: fw, h: fh });
+          for (let x = ref.x - fw + 1; x <= ref.x + ref.w - 1; x++) {
+            add(x, ref.y - fh);
+            add(x, ref.y + ref.h);
+          }
+          for (let y = ref.y - fh + 1; y <= ref.y + ref.h - 1; y++) {
+            add(ref.x - fw, y);
+            add(ref.x + ref.w, y);
+          }
+          return set;
+        }
+
+        for (let i = 0; i < total; i++) {
+          let best = null;
+          const refs = [buildingItem].concat(own);
+          for (const ref of refs) {
+            for (const c of candidateSlots(ref)) {
+              if (!canPlaceField(c)) continue;
+              const touchesBuilding = touchesByEdge(c, buildingItem);
+              const touchesOwn = own.some(r => touchesByEdge(c, r));
+              if (own.length === 0) {
+                if (!touchesBuilding) continue;
+              } else if (!touchesOwn) {
+                continue;
+              }
+              const cx = c.x + c.w / 2;
+              const cy = c.y + c.h / 2;
+              const score = Math.abs(cx - centerX) + Math.abs(cy - centerY) - (touchesBuilding ? 2 : 0) - (touchesOwn ? 1 : 0);
+              if (!best || score < best.score) best = { rect: c, score };
+            }
+          }
+          if (!best) break;
+          const rect = best.rect;
+          own.push(rect);
+          markRect(rect, occupiedSet);
+          itemsOut.push({
+            uid: uid(),
+            id: farm.id,
+            name: farm.name,
+            x: rect.x,
+            y: rect.y,
+            w: rect.w,
+            h: rect.h,
+            color: farm.color,
+            kind: 'field',
+            farmUid: buildingItem.uid
+          });
+        }
+        return own.length;
+      }
+
+      function preferredWarehouseSides(rect, center) {
+        const out = new Set();
+        const cx = rect.x + rect.w / 2;
+        const cy = rect.y + rect.h / 2;
+        const dx = center.x - cx;
+        const dy = center.y - cy;
+        const ax = Math.abs(dx);
+        const ay = Math.abs(dy);
+        const tie = Math.abs(ax - ay) <= 1.5;
+        if (ax >= ay || tie) out.add(dx < 0 ? 'left' : 'right');
+        if (ay >= ax || tie) out.add(dy < 0 ? 'top' : 'bottom');
+        return out;
+      }
+
+      const solutions = [];
+
+      rectLoop:
+      for (const rect of rectCandidates) {
+        const width = rect.w;
+        const height = rect.h;
+        const itemsLocal = [];
+        const occupied = new Set();
+        const roadSet = new Set();
+
+        const whVariant = warehouseMod.variants
+          .filter(v => v.w <= width && v.h <= height)
+          .sort((a, b) => (b.building.w * b.building.h) - (a.building.w * a.building.h))[0];
+        if (!whVariant) continue;
+        const whX = Math.max(0, Math.floor((width - whVariant.building.w) / 2));
+        const whY = Math.max(0, Math.floor((height - whVariant.building.h) / 2));
+        const whItem = {
+          ...whVariant.building,
+          uid: uid(),
+          x: whX,
+          y: whY,
+          kind: 'building'
+        };
+        itemsLocal.push(whItem);
+        markRect(whItem, occupied);
+        const whAnchors = anchorsForRect(whItem, width, height, occupied);
+        if (!whAnchors.length) continue;
+        for (const a of whAnchors) roadSet.add(a);
+        const warehouseCenter = { x: whItem.x + whItem.w / 2, y: whItem.y + whItem.h / 2 };
+
+        for (const mod of orderedModules) {
+          let bestPreferred = null;
+          let bestFallback = null;
+          const roadPoints = [...roadSet].slice(-320);
+          for (const variant of mod.variants) {
+            const bw = variant.building.w;
+            const bh = variant.building.h;
+            const offsetsY = [0, Math.floor(bh / 2), Math.max(0, bh - 1)];
+            const offsetsX = [0, Math.floor(bw / 2), Math.max(0, bw - 1)];
+            for (const rk of roadPoints) {
+              const rp = parse(rk);
+              for (const oy of offsetsY) {
+                const placements = [
+                  { x: rp.x + 1, y: rp.y - oy, side: 'left' },
+                  { x: rp.x - bw, y: rp.y - oy, side: 'right' }
+                ];
+                for (const cand of placements) {
+                  const rectCand = { x: cand.x, y: cand.y, w: bw, h: bh };
+                  if (!canPlaceRect(rectCand, width, height, occupied, roadSet)) continue;
+                  const cx = rectCand.x + bw / 2;
+                  const cy = rectCand.y + bh / 2;
+                  const distWh = Math.abs(cx - warehouseCenter.x) + Math.abs(cy - warehouseCenter.y);
+                  const preferredSides = preferredWarehouseSides(rectCand, warehouseCenter);
+                  const sidePreferred = preferredSides.has(cand.side);
+                  const sidePenalty = sidePreferred ? 0 : 420;
+                  const score = distWh * 3 + (modulePriority(mod) * 120) + (mod.fieldArea > 120 ? distWh * 0.3 : 0) + sidePenalty;
+                  if (sidePreferred) {
+                    if (!bestPreferred || score < bestPreferred.score) bestPreferred = { variant, rect: rectCand, score };
+                  } else if (!bestFallback || score < bestFallback.score) {
+                    bestFallback = { variant, rect: rectCand, score };
+                  }
+                }
+              }
+              for (const ox of offsetsX) {
+                const placements = [
+                  { x: rp.x - ox, y: rp.y + 1, side: 'top' },
+                  { x: rp.x - ox, y: rp.y - bh, side: 'bottom' }
+                ];
+                for (const cand of placements) {
+                  const rectCand = { x: cand.x, y: cand.y, w: bw, h: bh };
+                  if (!canPlaceRect(rectCand, width, height, occupied, roadSet)) continue;
+                  const cx = rectCand.x + bw / 2;
+                  const cy = rectCand.y + bh / 2;
+                  const distWh = Math.abs(cx - warehouseCenter.x) + Math.abs(cy - warehouseCenter.y);
+                  const preferredSides = preferredWarehouseSides(rectCand, warehouseCenter);
+                  const sidePreferred = preferredSides.has(cand.side);
+                  const sidePenalty = sidePreferred ? 0 : 420;
+                  const score = distWh * 3 + (modulePriority(mod) * 120) + (mod.fieldArea > 120 ? distWh * 0.3 : 0) + sidePenalty;
+                  if (sidePreferred) {
+                    if (!bestPreferred || score < bestPreferred.score) bestPreferred = { variant, rect: rectCand, score };
+                  } else if (!bestFallback || score < bestFallback.score) {
+                    bestFallback = { variant, rect: rectCand, score };
+                  }
+                }
+              }
+            }
+          }
+
+          const best = bestPreferred || bestFallback;
+          if (!best) continue rectLoop;
+
+          const buildingVariant = best.variant.building;
+          const farmCfg = buildingVariant.farmFields ? { ...buildingVariant.farmFields } : null;
+          const item = {
+            ...buildingVariant,
+            uid: uid(),
+            x: best.rect.x,
+            y: best.rect.y,
+            kind: 'building',
+            farmFields: farmCfg
+          };
+          itemsLocal.push(item);
+          markRect(item, occupied);
+
+          if (!connectRectToRoad(item, roadSet, width, height, occupied)) continue rectLoop;
+
+          if (farmCfg && mod.fieldArea > 0 && mod.fieldArea <= 40) {
+            const placedNow = placeImmediateSmallFarmFields(item, occupied, roadSet, itemsLocal, width, height);
+            const left = Math.max(0, (Number(farmCfg.count) || 0) - placedNow);
+            item.farmFields.count = left;
+          }
+        }
+
+        const roads = [...roadSet].map(k => {
+          const p = parse(k);
+          return { uid: uid(), id: 'road_feldweg', name: 'Feldweg', x: p.x, y: p.y, w: 1, h: 1, color: '#665539', kind: 'road' };
+        });
+        const out = itemsLocal.concat(roads);
+        if (!placeFlexibleFields(out, width, height)) continue;
+        fillSolidPads(out, width, height);
+        if (!validateRoadRules(out)) continue;
+        if (!validateSolidRectangle(out, width, height)) continue;
+        solutions.push(scoreSolution(out, 'road-chain'));
+      }
+
+      solutions.sort((a, b) => a.score - b.score);
+      return solutions[0] || null;
     }
 
     function buildRoadFirstLayout(clusters) {
@@ -2097,6 +2575,7 @@
     }
 
     function packSolidRect(clusters, width, height, orderName, allowRotate, debugSink = null) {
+      const policy = currentSolverPolicy();
       const list = clusters.map(c => ({ ...c, parts: c.parts.map(p => ({ ...p })) }));
       if (orderName === 'height') list.sort((a, b) => b.h - a.h || b.area - a.area);
       if (orderName === 'area') list.sort((a, b) => b.area - a.area || b.h - a.h);
@@ -2265,28 +2744,21 @@
         return null;
       }
 
-      const all = packed.map(it => ({ ...it }));
-      if (!placeFlexibleFields(all, width, height)) {
-        diagHit('fallback.fields_failed');
+      const composeDebug = debugSink ? {} : null;
+      const composed = composeRoadFieldLayout(packed, width, height, composeDebug, {
+        maxAttempts: Math.max(1, policy.composeAttemptsFallback || DEFAULT_SOLVER_POLICY.composeAttemptsFallback || 4)
+      });
+      if (!composed.ok) {
+        if (composed.failKind === 'fields') diagHit('fallback.fields_failed');
+        else diagHit('fallback.roads_failed');
         if (debugSink) {
-          debugSink.reason = 'fallback.fields_failed';
-          debugSink.items = cloneDebugItems(all);
-          debugSink.meta = { width, height };
+          debugSink.reason = composeDebug?.reason || `fallback.${composed.failKind || 'roads'}_failed`;
+          debugSink.items = cloneDebugItems(composeDebug?.items || packed);
+          debugSink.meta = { width, height, ...(composeDebug?.meta || {}) };
         }
         return null;
       }
-      const roadsDebug = debugSink ? {} : null;
-      const roads = addRoadsInRect(all, width, height, roadsDebug);
-      if (!roads) {
-        diagHit('fallback.roads_failed');
-        if (debugSink) {
-          debugSink.reason = roadsDebug?.reason || 'fallback.roads_failed';
-          debugSink.items = cloneDebugItems(roadsDebug?.items || all);
-          debugSink.meta = { width, height, ...(roadsDebug?.meta || {}) };
-        }
-        return null;
-      }
-      all.push(...roads);
+      const all = composed.items;
       fillSolidPads(all, width, height);
       const bbox = boundingBox(all);
       if (!bbox || bbox.w !== width || bbox.h !== height) {
@@ -2340,7 +2812,97 @@
       }));
     }
 
-    function addRoadsInRect(list, width, height, debugSink = null) {
+    function composeRoadFieldLayout(packed, width, height, debugSink = null, opts = {}) {
+      const clonePacked = () => packed.map(it => ({ ...it }));
+      const maxAttempts = Math.max(1, Math.min(12, Number(opts.maxAttempts) || 7));
+
+      const attemptFieldsFirst = (attempt) => {
+        const work = clonePacked();
+        if (!placeFlexibleFields(work, width, height, { attempt })) {
+          return { ok: false, kind: 'fields', reason: `fields_failed.a${attempt}`, items: work };
+        }
+        const roadsDebug = {};
+        const roads = addRoadsInRect(work, width, height, roadsDebug, { attempt });
+        if (!roads) {
+          return {
+            ok: false,
+            kind: 'roads',
+            reason: `${roadsDebug.reason || 'roads_failed'}.a${attempt}`,
+            items: roadsDebug.items || work,
+            meta: roadsDebug.meta || null
+          };
+        }
+        work.push(...roads);
+        return { ok: true, items: work, order: `fields-first.a${attempt}` };
+      };
+
+      const attemptRoadsFirst = (attempt) => {
+        const work = clonePacked();
+        const roadsDebug = {};
+        const roads = addRoadsInRect(work, width, height, roadsDebug, { attempt });
+        if (!roads) {
+          return {
+            ok: false,
+            kind: 'roads',
+            reason: `${roadsDebug.reason || 'roads_failed'}.a${attempt}`,
+            items: roadsDebug.items || work,
+            meta: roadsDebug.meta || null
+          };
+        }
+        work.push(...roads);
+        if (!placeFlexibleFields(work, width, height, { attempt })) {
+          return { ok: false, kind: 'fields', reason: `fields_failed_after_roads.a${attempt}`, items: work };
+        }
+        return { ok: true, items: work, order: `roads-first.a${attempt}` };
+      };
+
+      let first = null;
+      let second = null;
+      const failNotes = [];
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        first = attemptFieldsFirst(attempt);
+        if (first.ok) return { ok: true, items: first.items, order: first.order };
+        failNotes.push(`F${attempt}:${first.reason}`);
+        second = attemptRoadsFirst(attempt);
+        if (second.ok) return { ok: true, items: second.items, order: second.order };
+        failNotes.push(`R${attempt}:${second.reason}`);
+      }
+
+      const failKind = second?.kind || first?.kind || 'roads';
+      if (debugSink) {
+        debugSink.reason = `compose.failed | ${failNotes.slice(0, 10).join(' | ')}`;
+        debugSink.items = cloneDebugItems(second?.items || first?.items || packed);
+        debugSink.meta = {
+          width,
+          height,
+          failKind,
+          first: { kind: first?.kind, reason: first?.reason },
+          second: { kind: second?.kind, reason: second?.reason },
+          ...(second?.meta || first?.meta || {})
+        };
+      }
+      return { ok: false, failKind };
+    }
+
+    function addRoadsInRect(list, width, height, debugSink = null, opts = {}) {
+      const attempt = Math.max(0, Number(opts.attempt) || 0);
+      let seed = ((0xA117 ^ (attempt * 2654435761)) >>> 0) || 1;
+      const rnd = () => {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        return seed / 4294967296;
+      };
+      const shuffle = arr => {
+        const out = arr.slice();
+        if (attempt <= 0 || out.length < 2) return out;
+        for (let i = out.length - 1; i > 0; i--) {
+          const j = Math.floor(rnd() * (i + 1));
+          const tmp = out[i];
+          out[i] = out[j];
+          out[j] = tmp;
+        }
+        return out;
+      };
+      const dirOrder = attempt % 4;
       const key = (x, y) => x + ',' + y;
       const parse = value => {
         const comma = value.indexOf(',');
@@ -2348,6 +2910,7 @@
       };
       const inGrid = (x, y) => x >= 0 && y >= 0 && x < width && y < height;
       const blocked = new Set();
+      const roadForbidden = new Set();
 
       for (const it of list) {
         for (let y = it.y; y < it.y + it.h; y++) {
@@ -2355,26 +2918,33 @@
         }
       }
 
-      function anchorsFor(rect) {
+      function anchorsAroundRect(rect) {
         const anchors = [];
         for (let x = rect.x; x < rect.x + rect.w; x++) {
-          anchors.push({ x, y: rect.y - 1 });
-          anchors.push({ x, y: rect.y + rect.h });
+          anchors.push({ x, y: rect.y - 1, side: 'top' });
+          anchors.push({ x, y: rect.y + rect.h, side: 'bottom' });
         }
         for (let y = rect.y; y < rect.y + rect.h; y++) {
-          anchors.push({ x: rect.x - 1, y });
-          anchors.push({ x: rect.x + rect.w, y });
+          anchors.push({ x: rect.x - 1, y, side: 'left' });
+          anchors.push({ x: rect.x + rect.w, y, side: 'right' });
         }
         const seen = new Set();
         return anchors.filter(p => {
           const k = key(p.x, p.y);
           if (!inGrid(p.x, p.y) || blocked.has(k) || seen.has(k)) return false;
           seen.add(k);
+          p.k = k;
+          p.distToEdge = Math.min(p.x, p.y, (width - 1) - p.x, (height - 1) - p.y);
           return true;
         });
       }
 
-      function findPathToTargets(roadSet, targetSet) {
+      function anchorsFor(rect, includeForbidden = false) {
+        const anchors = anchorsAroundRect(rect);
+        return includeForbidden ? anchors : anchors.filter(a => !roadForbidden.has(a.k));
+      }
+
+      function buildParentMapFromRoadSet(roadSet) {
         const queue = [];
         const parent = new Map();
         for (const start of roadSet) {
@@ -2382,39 +2952,72 @@
           parent.set(start, null);
           queue.push(start);
         }
-
-        let hit = null;
         for (let i = 0; i < queue.length; i++) {
           const cur = queue[i];
-          if (targetSet.has(cur)) {
-            hit = cur;
-            break;
-          }
           const p = parse(cur);
-          const next = [
+          const nextBase = [
             { x: p.x - 1, y: p.y },
             { x: p.x + 1, y: p.y },
             { x: p.x, y: p.y - 1 },
             { x: p.x, y: p.y + 1 },
           ];
+          const next = nextBase.slice(dirOrder).concat(nextBase.slice(0, dirOrder));
           for (const n of next) {
             const nk = key(n.x, n.y);
-            if (!inGrid(n.x, n.y) || parent.has(nk) || blocked.has(nk)) continue;
+            if (!inGrid(n.x, n.y) || parent.has(nk) || blocked.has(nk) || roadForbidden.has(nk)) continue;
             parent.set(nk, cur);
             queue.push(nk);
           }
         }
+        return parent;
+      }
 
-        if (!hit) return null;
+      function tracePathFromParent(parent, hit) {
+        if (!hit || !parent.has(hit)) return null;
         const path = [];
         for (let cur = hit; cur; cur = parent.get(cur)) path.push(cur);
         path.reverse();
         return path;
       }
 
+      function findPathToTargets(parent, targetSet) {
+        const targets = shuffle([...targetSet]);
+        let hit = null;
+        for (const target of targets) {
+          if (parent.has(target)) {
+            hit = target;
+            break;
+          }
+        }
+        return tracePathFromParent(parent, hit);
+      }
+
       const buildings = list.filter(it => it.kind === 'building');
       if (!buildings.length) return [];
       const warehouse = buildings.find(it => it.id === 'infra_lagerhaus') || buildings[0];
+      const warehouseCenter = { x: warehouse.x + warehouse.w / 2, y: warehouse.y + warehouse.h / 2 };
+      const forcedRoadAnchors = new Map();
+
+      for (const building of buildings) {
+        if (!building?.farmFields || !(Number(building?.farmFields?.count) > 0)) continue;
+        const anchors = anchorsAroundRect(building);
+        if (!anchors.length) continue;
+        anchors.sort((a, b) => {
+          const da = Math.abs(a.x - warehouseCenter.x) + Math.abs(a.y - warehouseCenter.y);
+          const db = Math.abs(b.x - warehouseCenter.x) + Math.abs(b.y - warehouseCenter.y);
+          return da - db || b.distToEdge - a.distToEdge;
+        });
+        const primary = anchors[0];
+        const selected = [primary];
+        const second = anchors.find(a => a.side !== primary.side) || anchors[1] || null;
+        if (second && second.k !== primary.k) selected.push(second);
+        forcedRoadAnchors.set(building.uid, new Set(selected.map(a => a.k)));
+        for (const a of anchors) {
+          if (selected.some(s => s.k === a.k)) continue;
+          roadForbidden.add(a.k);
+        }
+      }
+
       const warehouseAnchors = anchorsFor(warehouse);
       if (!warehouseAnchors.length) {
         diagHit('roads.no_warehouse_anchor');
@@ -2427,16 +3030,23 @@
       }
 
       const roadSet = new Set(warehouseAnchors.map(p => key(p.x, p.y)));
-      const ordered = buildings
+      let parentMap = buildParentMapFromRoadSet(roadSet);
+      const orderedBase = buildings
         .filter(it => it !== warehouse)
         .sort((a, b) => {
           const da = Math.abs((a.x + a.w / 2) - (warehouse.x + warehouse.w / 2)) + Math.abs((a.y + a.h / 2) - (warehouse.y + warehouse.h / 2));
           const db = Math.abs((b.x + b.w / 2) - (warehouse.x + warehouse.w / 2)) + Math.abs((b.y + b.h / 2) - (warehouse.y + warehouse.h / 2));
-          return da - db;
+          if (da !== db) return da - db;
+          return a.y - b.y || a.x - b.x;
         });
+      const ordered = attempt > 0 ? shuffle(orderedBase) : orderedBase;
 
       for (const building of ordered) {
-        const targetSet = new Set(anchorsFor(building).map(p => key(p.x, p.y)));
+        const forced = forcedRoadAnchors.get(building.uid);
+        const targetKeys = forced
+          ? [...forced].filter(k => !blocked.has(k) && !roadForbidden.has(k))
+          : shuffle(anchorsFor(building).map(p => key(p.x, p.y)));
+        const targetSet = new Set(targetKeys);
         if (!targetSet.size) {
           diagHit('roads.no_building_anchor');
           if (debugSink) {
@@ -2454,7 +3064,7 @@
           }
         }
         if (!connected) {
-          const path = findPathToTargets(roadSet, targetSet);
+          const path = findPathToTargets(parentMap, targetSet);
           if (!path) {
             diagHit('roads.no_path_to_building');
             if (debugSink) {
@@ -2470,7 +3080,14 @@
             }
             return null;
           }
-          for (const p of path) roadSet.add(p);
+          let added = false;
+          for (const p of path) {
+            if (!roadSet.has(p)) {
+              roadSet.add(p);
+              added = true;
+            }
+          }
+          if (added) parentMap = buildParentMapFromRoadSet(roadSet);
         }
       }
 
@@ -2485,7 +3102,7 @@
       }
       const touchesEdge = [...roadSet].some(k => edgeTargets.has(k));
       if (!touchesEdge) {
-        const edgePath = findPathToTargets(roadSet, edgeTargets);
+        const edgePath = findPathToTargets(parentMap, edgeTargets);
         if (!edgePath) {
           diagHit('roads.no_path_to_edge');
           if (debugSink) {
@@ -2504,7 +3121,25 @@
       });
     }
 
-    function placeFlexibleFields(list, width, height) {
+    function placeFlexibleFields(list, width, height, opts = {}) {
+      const attempt = Math.max(0, Number(opts.attempt) || 0);
+      const reserveRoadPaths = !!opts.reserveRoadPaths;
+      let seed = ((0xBEEF ^ (attempt * 1103515245)) >>> 0) || 1;
+      const rnd = () => {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        return seed / 4294967296;
+      };
+      const shuffle = arr => {
+        const out = arr.slice();
+        if (attempt <= 0 || out.length < 2) return out;
+        for (let i = out.length - 1; i > 0; i--) {
+          const j = Math.floor(rnd() * (i + 1));
+          const tmp = out[i];
+          out[i] = out[j];
+          out[j] = tmp;
+        }
+        return out;
+      };
       const key = (x, y) => x + ',' + y;
       const occupied = new Set();
       const inBounds = (x, y, w, h) => x >= 0 && y >= 0 && x + w <= width && y + h <= height;
@@ -2554,6 +3189,13 @@
       const warehouse = buildings.find(it => it.id === 'infra_lagerhaus') || null;
       const warehouseCenter = warehouse ? { x: warehouse.x + warehouse.w / 2, y: warehouse.y + warehouse.h / 2 } : null;
       const reservedRoadTiles = new Set();
+      for (const it of list) {
+        if (it.kind !== 'road') continue;
+        for (let y = it.y; y < it.y + it.h; y++) {
+          for (let x = it.x; x < it.x + it.w; x++) reservedRoadTiles.add(key(x, y));
+        }
+      }
+      const fixedRoadTiles = new Set(reservedRoadTiles);
 
       const buildingBlocked = new Set();
       for (const b of buildings) {
@@ -2600,12 +3242,14 @@
           const comma = cur.indexOf(',');
           const x = Number(cur.slice(0, comma));
           const y = Number(cur.slice(comma + 1));
-          const next = [
+          const nextBase = [
             [x - 1, y],
             [x + 1, y],
             [x, y - 1],
             [x, y + 1]
           ];
+          const shift = attempt % 4;
+          const next = nextBase.slice(shift).concat(nextBase.slice(0, shift));
           for (const [nx, ny] of next) {
             if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
             const nk = key(nx, ny);
@@ -2664,13 +3308,29 @@
         })
         .filter(state => state.remaining > 0);
 
+      for (const state of farmStates) {
+        for (const rect of state.farmRects) addTouchingSlots(state.frontier, rect, state.unitW, state.unitH);
+      }
+
       function scoreRect(state, rect) {
         const touchesFarmBuilding = touchesByEdge(rect, state.farm);
         const touchesOwnField = state.farmRects.some(r => touchesByEdge(rect, r));
         const cx = rect.x + rect.w / 2;
         const cy = rect.y + rect.h / 2;
         const dist = Math.abs(cx - state.centerX) + Math.abs(cy - state.centerY);
-        return dist * 10 + (touchesFarmBuilding ? -14 : 0) + (touchesOwnField ? -8 : 0);
+        let localExpansion = 0;
+        const around = new Set();
+        addTouchingSlots(around, rect, state.unitW, state.unitH);
+        for (const k of around) {
+          const comma = k.indexOf(',');
+          const x = Number(k.slice(0, comma));
+          const y = Number(k.slice(comma + 1));
+          const probe = { x, y, w: state.unitW, h: state.unitH };
+          if (!canFit(probe)) continue;
+          if (!touchesByEdge(probe, state.farm) && !state.farmRects.some(r => touchesByEdge(probe, r)) && !touchesByEdge(probe, rect)) continue;
+          localExpansion++;
+        }
+        return dist * 10 + (touchesFarmBuilding ? -14 : 0) + (touchesOwnField ? -8 : 0) - (localExpansion * 3.5);
       }
 
       function chooseSlot(state, requireTouchFarmBuilding) {
@@ -2679,10 +3339,11 @@
           const rect = { x, y, w: state.unitW, h: state.unitH };
           if (!canFit(rect)) return;
           const touchesFarmBuilding = touchesByEdge(rect, state.farm);
+          const touchesOwnField = state.farmRects.some(r => touchesByEdge(rect, r));
           if (requireTouchFarmBuilding && !touchesFarmBuilding) return;
-          if (!requireTouchFarmBuilding && touchesFarmBuilding && !allowTouchFarmAfterAnchor) return;
+          if (!requireTouchFarmBuilding && !touchesOwnField) return;
           const score = scoreRect(state, rect);
-          if (!best || score < best.score || (score === best.score && (y < best.rect.y || (y === best.rect.y && x < best.rect.x)))) {
+          if (!best || score < best.score || (score === best.score && rnd() < 0.5)) {
             best = { rect, score };
           }
         };
@@ -2690,22 +3351,28 @@
         if (requireTouchFarmBuilding) {
           const anchorSet = new Set();
           addTouchingSlots(anchorSet, state.farm, state.unitW, state.unitH);
-          for (const k of anchorSet) {
+          for (const k of shuffle([...anchorSet])) {
             const comma = k.indexOf(',');
             const x = Number(k.slice(0, comma));
             const y = Number(k.slice(comma + 1));
             tryCandidate(x, y);
           }
         } else {
-          for (const k of state.frontier) {
+          for (const k of shuffle([...state.frontier])) {
             const comma = k.indexOf(',');
             const x = Number(k.slice(0, comma));
             const y = Number(k.slice(comma + 1));
             tryCandidate(x, y);
           }
           if (!best) {
-            for (let y = 0; y <= height - state.unitH; y++) {
-              for (let x = 0; x <= width - state.unitW; x++) {
+            const ySpan = Math.max(1, (height - state.unitH) + 1);
+            const xSpan = Math.max(1, (width - state.unitW) + 1);
+            const yOff = attempt % ySpan;
+            const xOff = (attempt * 3) % xSpan;
+            for (let yi = 0; yi < ySpan; yi++) {
+              const y = (yi + yOff) % ySpan;
+              for (let xi = 0; xi < xSpan; xi++) {
+                const x = (xi + xOff) % xSpan;
                 tryCandidate(x, y, true);
               }
             }
@@ -2727,6 +3394,11 @@
       }
 
       farmStates.sort((a, b) => a.anchorOptions - b.anchorOptions || b.remaining - a.remaining);
+      if (attempt > 0) {
+        const reordered = shuffle(farmStates);
+        farmStates.length = 0;
+        farmStates.push(...reordered);
+      }
 
       function addFieldForState(state, rect) {
         clearRoadOverlap(rect);
@@ -2749,6 +3421,7 @@
       }
 
       for (const state of farmStates) {
+        if (state.farmRects.length > 0) continue;
         const first = chooseSlot(state, true);
         if (!first) {
           diagHit('fields.no_anchor_slot');
@@ -2759,12 +3432,12 @@
 
       function reserveRoadAnchorsAndPaths() {
         reservedRoadTiles.clear();
+        for (const k of fixedRoadTiles) reservedRoadTiles.add(k);
         const chosenAnchors = new Map();
         for (const b of buildings) {
           const anchors = buildingAnchorCandidates(b);
-          if (!anchors.length) continue;
-          let best = anchors[0];
-          for (const a of anchors) {
+          if (!anchors.length) return false;
+          const scored = anchors.map(a => {
             let score;
             if (b.id === 'infra_lagerhaus') {
               score = Math.min(a.x, a.y, (width - 1) - a.x, (height - 1) - a.y);
@@ -2773,13 +3446,15 @@
             } else {
               score = 0;
             }
-            if (score < best.score || best.score === undefined) best = { ...a, score };
-          }
+            return { ...a, score };
+          }).sort((x, y) => x.score - y.score || x.y - y.y || x.x - y.x);
+          const pickIndex = attempt > 0 ? Math.min(scored.length - 1, attempt % Math.min(4, scored.length)) : 0;
+          const best = scored[pickIndex];
           reservedRoadTiles.add(best.k);
           chosenAnchors.set(b.uid, { x: best.x, y: best.y, k: best.k });
         }
 
-        if (warehouse) {
+        if (reserveRoadPaths && warehouse) {
           const whAnchor = chosenAnchors.get(warehouse.uid);
           for (const b of buildings) {
             if (b.uid === warehouse.uid) continue;
@@ -2788,9 +3463,13 @@
             reservePath(a, whAnchor);
           }
         }
+        return true;
       }
 
-      reserveRoadAnchorsAndPaths();
+      if (!reserveRoadAnchorsAndPaths()) {
+        diagHit('fields.no_road_anchor');
+        return false;
+      }
 
       let guard = 0;
       const totalRemaining = () => farmStates.reduce((sum, state) => sum + state.remaining, 0);
@@ -2802,6 +3481,11 @@
         }
         let progress = false;
         farmStates.sort((a, b) => b.remaining - a.remaining || a.anchorOptions - b.anchorOptions);
+        if (attempt > 0) {
+          const reordered = shuffle(farmStates);
+          farmStates.length = 0;
+          farmStates.push(...reordered);
+        }
         for (const state of farmStates) {
           if (state.remaining <= 0) continue;
           const next = chooseSlot(state, false);
@@ -3071,6 +3755,7 @@
         if (results.some(s => s.tag === sol.tag && s.bbox.w === sol.bbox.w && s.bbox.h === sol.bbox.h)) return;
         results.push(sol);
       };
+      add(buildRoadChainLayout(clusters));
       add(buildFieldFirstRowsLayout(clusters));
       add(buildFieldReservationLayout(clusters));
       add(buildRoadFirstLayout(clusters));
@@ -3201,6 +3886,7 @@
           solutions.splice(10);
         };
 
+        add(buildRoadChainLayout(clusters));
         add(buildFieldFirstRowsLayout(clusters));
         add(buildFieldReservationLayout(clusters));
         add(buildRoadFirstLayout(clusters));
@@ -3392,7 +4078,7 @@
         return;
       }
 
-      const TARGET_SOLUTIONS = 8;
+      const TARGET_SOLUTIONS = 6;
       const MAX_SOLUTIONS = 16;
       const MAX_INVALID_ATTEMPTS = 14;
       const solutions = [];
@@ -3400,7 +4086,9 @@
       const invalidAttempts = [];
       const invalidKeys = new Set();
       latestInvalidSnapshot = null;
-      if (showDebugBtn) showDebugBtn.disabled = true;
+      latestInvalidSnapshots = [];
+      latestInvalidCursor = -1;
+      updateDebugNavState();
       debugOverlay = null;
 
       const policyKey = policy => JSON.stringify({
@@ -3470,8 +4158,12 @@
           debug: entry.debug || null
         };
         invalidAttempts.push(snapshot);
-        if (snapshot?.debug?.items?.length) latestInvalidSnapshot = snapshot;
-        if (showDebugBtn) showDebugBtn.disabled = !latestInvalidSnapshot?.debug?.items?.length;
+        if (snapshot?.debug?.items?.length) {
+          latestInvalidSnapshot = snapshot;
+          latestInvalidSnapshots.push(snapshot);
+          latestInvalidCursor = latestInvalidSnapshots.length - 1;
+        }
+        updateDebugNavState();
         if (invalidAttempts.length > MAX_INVALID_ATTEMPTS) invalidAttempts.splice(0, invalidAttempts.length - MAX_INVALID_ATTEMPTS);
         refreshInvalidAttemptsLive();
       };
@@ -3484,7 +4176,8 @@
       const refreshInvalidAttemptsLive = () => {
         const top = diagTopReasons(4);
         const topBlock = top.length ? `Top-Fails:\n${top.join('\n')}\n\n` : '';
-        updateInvalidAttemptsLive(`${topBlock}${invalidAttemptsSummaryText(12)}`);
+        const visualInfo = latestInvalidSnapshots.length ? `Visualisierbar: ${latestInvalidSnapshots.length}\n\n` : '';
+        updateInvalidAttemptsLive(`${topBlock}${visualInfo}${invalidAttemptsSummaryText(12)}`);
       };
 
       const runExactPass = async (passPolicy, passLabel, rectFactor = 1, stride = 6) => {
@@ -3497,14 +4190,18 @@
           const rectCap = Math.max(12, Math.min(candidates.length, rawCap));
           const passCandidates = candidates.slice(0, rectCap);
           const passTotal = Math.max(1, passCandidates.length * orders.length * 2);
+          const triesCapBase = solverPolicy.maxPassTriesExact || DEFAULT_SOLVER_POLICY.maxPassTriesExact || 520;
+          const passMaxTries = Math.max(20, Math.min(passTotal, Math.floor(triesCapBase * Math.max(0.35, rectFactor))));
           let passTries = 0;
           let passHits = 0;
 
           passRects:
           for (const rect of passCandidates) {
+            if (passTries >= passMaxTries) break passRects;
             if (solutions.length >= TARGET_SOLUTIONS && solutions[0] && rect.area > solutions[0].area + Math.max(100, solutions[0].area * 0.15)) break;
             for (const order of orders) {
               for (const rot of [false, true]) {
+                if (passTries >= passMaxTries) break passRects;
                 if (cancelOptimize) break passRects;
                 const mode = `${passLabel} ${order}${rot ? ' rot' : ''}`.trim();
                 setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
@@ -3523,7 +4220,7 @@
                 passTries++;
                 if (passTries % stride === 0) {
                   const bestText = solutions[0] ? ` | beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}` : '';
-                  setStatus(`${passLabel} ${passTries}/${passTotal}${bestText}`, Math.min(96, (passTries / passTotal) * 100));
+                  setStatus(`${passLabel} ${passTries}/${passMaxTries}${bestText}`, Math.min(96, (passTries / passMaxTries) * 100));
                   await tick();
                 }
               }
@@ -3546,13 +4243,17 @@
           const rectCap = Math.max(12, Math.min(candidates.length, rawCap));
           const passCandidates = candidates.slice(0, rectCap);
           const passTotal = Math.max(1, passCandidates.length * orders.length * 2);
+          const triesCapBase = solverPolicy.maxPassTriesFallback || DEFAULT_SOLVER_POLICY.maxPassTriesFallback || 340;
+          const passMaxTries = Math.max(16, Math.min(passTotal, Math.floor(triesCapBase * Math.max(0.35, capFactor))));
           let passTries = 0;
           let passHits = 0;
 
           fallbackRects:
           for (const rect of passCandidates) {
+            if (passTries >= passMaxTries) break fallbackRects;
             for (const order of orders) {
               for (const rot of [false, true]) {
+                if (passTries >= passMaxTries) break fallbackRects;
                 if (cancelOptimize) break fallbackRects;
                 const mode = `${passLabel} ${order}${rot ? ' rot' : ''}`.trim();
                 setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
@@ -3571,7 +4272,7 @@
                 passTries++;
                 if (passTries % stride === 0) {
                   const bestText = solutions[0] ? ` | beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}` : '';
-                  setStatus(`${passLabel} ${passTries}/${passTotal}${bestText}`, Math.min(97, (passTries / passTotal) * 100));
+                  setStatus(`${passLabel} ${passTries}/${passMaxTries}${bestText}`, Math.min(97, (passTries / passMaxTries) * 100));
                   await tick();
                 }
               }
@@ -3626,6 +4327,16 @@
         updateOptLive(`Road-First Treffer\n${roadFirst.bbox.w}x${roadFirst.bbox.h} | Beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}`, solutions[0]);
       }
 
+      setStatus('Baue Lagerhaus-Kettenstrategie...', 5);
+      setOptimizeStatus({ rect: null, mode: 'Road-Chain', hits: solutions.length, best: solutions[0] || null });
+      updateOptLive('Road-Chain\nLagerhaus -> Gebaeude-Reihenfolge -> Strassen je Schritt.', solutions[0] || null);
+      await tick();
+      const roadChain = buildRoadChainLayout(clusters);
+      if (addSolution(roadChain, 'road-chain')) {
+        setOptimizeStatus({ rect: roadChain.bbox, mode: 'Road-Chain', hits: solutions.length, best: solutions[0] || null });
+        updateOptLive(`Road-Chain Treffer\n${roadChain.bbox.w}x${roadChain.bbox.h} | Beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}`, solutions[0]);
+      }
+
       await runExactPass(policy, 'Constraint-Suche', 1, 4);
 
       if (cancelOptimize) {
@@ -3649,7 +4360,11 @@
       if (!cancelOptimize && solutions.length < TARGET_SOLUTIONS) {
         const sequence = getOptimizePolicySequence();
         const baseKey = policyKey(policy);
-        const altPolicies = sequence.filter(p => policyKey(p) !== baseKey);
+        const altPool = sequence.filter(p => policyKey(p) !== baseKey);
+        const altLimit = solutions.length > 0
+          ? (policy.altSweepProfilesWhenHit || DEFAULT_SOLVER_POLICY.altSweepProfilesWhenHit || 2)
+          : (policy.altSweepProfilesWhenEmpty || DEFAULT_SOLVER_POLICY.altSweepProfilesWhenEmpty || 4);
+        const altPolicies = altPool.slice(0, Math.max(0, altLimit));
 
         for (let i = 0; i < altPolicies.length; i++) {
           if (cancelOptimize || solutions.length >= TARGET_SOLUTIONS) break;
@@ -3714,6 +4429,7 @@
 
     function applySolution(sol) {
       if (!sol || !Array.isArray(sol.items)) return;
+      debugOverlay = null;
       items = sol.items.map(it => ({ ...it, uid: uid() }));
       render();
       setStatus(`Layout angewendet: ${sol.bbox.w}x${sol.bbox.h}.`, 100);
@@ -3856,11 +4572,22 @@
       cancelLearning = true;
     });
     showDebugBtn?.addEventListener('click', () => {
-      if (!latestInvalidSnapshot) {
+      if (!latestInvalidSnapshots.length) {
         setStatus('Kein Debug-Snapshot verfuegbar.', 0);
         return;
       }
-      showDebugSnapshot(latestInvalidSnapshot);
+      latestInvalidCursor = latestInvalidSnapshots.length - 1;
+      showInvalidSnapshotByCursor();
+    });
+    prevDebugBtn?.addEventListener('click', () => {
+      if (!latestInvalidSnapshots.length) return;
+      latestInvalidCursor = Math.max(0, latestInvalidCursor - 1);
+      showInvalidSnapshotByCursor();
+    });
+    nextDebugBtn?.addEventListener('click', () => {
+      if (!latestInvalidSnapshots.length) return;
+      latestInvalidCursor = Math.min(latestInvalidSnapshots.length - 1, latestInvalidCursor + 1);
+      showInvalidSnapshotByCursor();
     });
     clearDebugBtn?.addEventListener('click', () => {
       clearDebugOverlay();
@@ -3868,6 +4595,7 @@
     });
     document.getElementById('clearBtn').addEventListener('click', () => {
       if (!confirm('Karte wirklich leeren?')) return;
+      debugOverlay = null;
       items = [];
       render();
       setStatus('Karte geleert.', 0);
@@ -3900,7 +4628,7 @@
     });
 
     buildCatalog();
-    if (showDebugBtn) showDebugBtn.disabled = true;
+    updateDebugNavState();
     selectTool('infra_lagerhaus');
     render();
   </script>
