@@ -44,12 +44,19 @@
 
     .sidebar {
       min-width: 0;
+      min-height: 0;
+      height: 100vh;
+      max-height: 100vh;
       border-right: 1px solid var(--line);
       background: var(--panel);
-      display: grid;
-      grid-template-rows: auto auto auto 1fr auto;
+      display: flex;
+      flex-direction: column;
+      overflow-y: scroll;
+      overflow-x: hidden;
+      overscroll-behavior: contain;
       box-shadow: 12px 0 36px rgba(0,0,0,.24);
       z-index: 2;
+      scrollbar-color: #596063 #17191a;
     }
 
     .brand {
@@ -275,10 +282,13 @@
       white-space: pre-line;
     }
 
+    .catalog-scroll {
+      min-height: auto;
+      overflow: visible;
+    }
+
     .content {
-      overflow: auto;
       padding: 8px 12px 14px;
-      scrollbar-color: #596063 #17191a;
     }
 
     details {
@@ -606,7 +616,7 @@
   <aside class="sidebar">
     <div class="brand">
       <h1>ANNO 117 Planer</h1>
-      <div class="sub">Produktionsmengen planen, optimieren, platzieren</div>
+      <div class="sub">Produktionsmengen planen, optimieren, platzieren (Scrollfix aktiv)</div>
     </div>
 
     <div class="toolbar">
@@ -635,19 +645,21 @@
       </div>
     </div>
 
-    <details class="guide" open>
-      <summary>Kurzanleitung</summary>
-      <div class="guide-body">
-        <ol>
-          <li>Links mit + die gewuenschten Produktionsgebaeude zaehlen.</li>
-          <li>Optimieren klicken und warten, bis Treffer erscheinen.</li>
-          <li>Die beste Loesung wird automatisch gesetzt; Alternativen kannst du im Ergebnisfenster anklicken.</li>
-          <li>Leere Karte bedeutet: keine Menge gewaehlt oder keine Loesung gefunden.</li>
-        </ol>
-      </div>
-    </details>
+    <div class="catalog-scroll">
+      <details class="guide" open>
+        <summary>Kurzanleitung</summary>
+        <div class="guide-body">
+          <ol>
+            <li>Links mit + die gewuenschten Produktionsgebaeude zaehlen.</li>
+            <li>Optimieren klicken und warten, bis Treffer erscheinen.</li>
+            <li>Die beste Loesung wird automatisch gesetzt; Alternativen kannst du im Ergebnisfenster anklicken.</li>
+            <li>Leere Karte bedeutet: keine Menge gewaehlt oder keine Loesung gefunden.</li>
+          </ol>
+        </div>
+      </details>
 
-    <div id="catalog" class="content"></div>
+      <div id="catalog" class="content"></div>
+    </div>
 
     <div class="status">
       <div id="statusText">Bereit.</div>
