@@ -930,6 +930,9 @@
     let cancelLearning = false;
     let activeDiag = null;
     let solverPolicy = loadSolverPolicy();
+    const EXACT_DOMAIN_CACHE_MAX = 2400;
+    const OPT_UI_UPDATE_MIN_MS = 85;
+    let exactDomainCache = new Map();
     let latestInvalidSnapshot = null;
     let latestInvalidSnapshots = [];
     let latestInvalidCursor = -1;
@@ -1398,6 +1401,46 @@
       return clustersFromCounts(counts);
     }
 
+    function exactDomainCacheKey(cluster, width, height, allowRotate, cap) {
+      if (!cluster) return '';
+      const clusterSig = cluster.id
+        || `${cluster.w}x${cluster.h}:${(cluster.parts || []).map(p => `${p.id}@${p.x},${p.y},${p.w},${p.h}`).join('|')}`;
+      return `${clusterSig}|${width}x${height}|${allowRotate ? 'rot' : 'std'}|${cap}`;
+    }
+
+    function getExactClusterPlacements(cluster, width, height, allowRotate, cap) {
+      const cacheKey = exactDomainCacheKey(cluster, width, height, allowRotate, cap);
+      if (cacheKey && exactDomainCache.has(cacheKey)) return exactDomainCache.get(cacheKey);
+
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const variants = clusterVariantsFor(cluster, allowRotate, width, height, 14);
+      const placements = [];
+      for (const variant of variants) {
+        for (let y = 1; y <= height - 1 - variant.h; y++) {
+          for (let x = 1; x <= width - 1 - variant.w; x++) {
+            const edgeTouch = x === 1 || y === 1 || x + variant.w === width - 1 || y + variant.h === height - 1;
+            const cx = x + variant.w / 2;
+            const cy = y + variant.h / 2;
+            const ratio = Math.max(variant.w, variant.h) / Math.max(1, Math.min(variant.w, variant.h));
+            const score = Math.abs(cx - centerX) + Math.abs(cy - centerY) + ratio * 2 - (edgeTouch ? 1.5 : 0);
+            placements.push({ cluster: variant, x, y, score });
+          }
+        }
+      }
+      placements.sort((a, b) => a.score - b.score || a.y - b.y || a.x - b.x);
+      const sliced = placements.slice(0, cap);
+
+      if (cacheKey) {
+        exactDomainCache.set(cacheKey, sliced);
+        if (exactDomainCache.size > EXACT_DOMAIN_CACHE_MAX) {
+          const firstKey = exactDomainCache.keys().next().value;
+          if (firstKey) exactDomainCache.delete(firstKey);
+        }
+      }
+      return sliced;
+    }
+
     function clusterVariantsFor(source, allowRotate, width, height, limit = 16) {
       const baseVariants = Array.isArray(source.variants) && source.variants.length ? source.variants : [source];
       const variants = [];
@@ -1460,26 +1503,8 @@
         return null;
       }
 
-      const centerX = width / 2;
-      const centerY = height / 2;
-      const domains = list.map((cluster, idx) => {
-        const variants = clusterVariantsFor(cluster, allowRotate, width, height, 14);
-        const placements = [];
-        for (const variant of variants) {
-          for (let y = 1; y <= height - 1 - variant.h; y++) {
-            for (let x = 1; x <= width - 1 - variant.w; x++) {
-              const edgeTouch = x === 1 || y === 1 || x + variant.w === width - 1 || y + variant.h === height - 1;
-              const cx = x + variant.w / 2;
-              const cy = y + variant.h / 2;
-              const ratio = Math.max(variant.w, variant.h) / Math.max(1, Math.min(variant.w, variant.h));
-              const score = Math.abs(cx - centerX) + Math.abs(cy - centerY) + ratio * 2 - (edgeTouch ? 1.5 : 0);
-              placements.push({ cluster: variant, x, y, score, idx });
-            }
-          }
-        }
-        placements.sort((a, b) => a.score - b.score || a.y - b.y || a.x - b.x);
-        return placements.slice(0, Math.max(40, policy.exactPlacementsCap || DEFAULT_SOLVER_POLICY.exactPlacementsCap));
-      });
+      const placementsCap = Math.max(40, policy.exactPlacementsCap || DEFAULT_SOLVER_POLICY.exactPlacementsCap);
+      const domains = list.map(cluster => getExactClusterPlacements(cluster, width, height, allowRotate, placementsCap));
 
       if (domains.some(d => !d.length)) {
         diagHit('exact.no_placements_for_cluster');
@@ -4070,6 +4095,7 @@
     }
 
     async function optimize() {
+      exactDomainCache.clear();
       const clusters = expandCounts();
       if (!clusters.length) {
         activeDiag = null;
@@ -4194,6 +4220,15 @@
           const passMaxTries = Math.max(20, Math.min(passTotal, Math.floor(triesCapBase * Math.max(0.35, rectFactor))));
           let passTries = 0;
           let passHits = 0;
+          let nextUiAt = performance.now();
+
+          const shouldUpdateUi = (mustStride = false) => {
+            if (!mustStride) return false;
+            const now = performance.now();
+            if (now < nextUiAt) return false;
+            nextUiAt = now + OPT_UI_UPDATE_MIN_MS;
+            return true;
+          };
 
           passRects:
           for (const rect of passCandidates) {
@@ -4204,8 +4239,11 @@
                 if (passTries >= passMaxTries) break passRects;
                 if (cancelOptimize) break passRects;
                 const mode = `${passLabel} ${order}${rot ? ' rot' : ''}`.trim();
-                setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
-                if (passTries % stride === 0) updateOptLive(`${passLabel}\n${rect.w}x${rect.h} | ${order}${rot ? ' rot' : ''}\nTreffer: ${solutions.length}`, solutions[0] || null);
+                const wantsUi = passTries % stride === 0;
+                if (shouldUpdateUi(wantsUi)) {
+                  setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
+                  updateOptLive(`${passLabel}\n${rect.w}x${rect.h} | ${order}${rot ? ' rot' : ''}\nTreffer: ${solutions.length}`, solutions[0] || null);
+                }
                 const beforeDiag = captureDiagSnapshot();
                 const attemptDebug = {};
                 const sol = packExactRect(clusters, rect.w, rect.h, order, rot, attemptDebug);
@@ -4218,7 +4256,7 @@
                   recordInvalidAttempt({ pass: passLabel, rect, order, rot, reason: reason || 'exact.failed_unknown', debug: attemptDebug });
                 }
                 passTries++;
-                if (passTries % stride === 0) {
+                if (shouldUpdateUi(passTries % stride === 0 || passTries >= passMaxTries)) {
                   const bestText = solutions[0] ? ` | beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}` : '';
                   setStatus(`${passLabel} ${passTries}/${passMaxTries}${bestText}`, Math.min(96, (passTries / passMaxTries) * 100));
                   await tick();
@@ -4247,6 +4285,15 @@
           const passMaxTries = Math.max(16, Math.min(passTotal, Math.floor(triesCapBase * Math.max(0.35, capFactor))));
           let passTries = 0;
           let passHits = 0;
+          let nextUiAt = performance.now();
+
+          const shouldUpdateUi = (mustStride = false) => {
+            if (!mustStride) return false;
+            const now = performance.now();
+            if (now < nextUiAt) return false;
+            nextUiAt = now + OPT_UI_UPDATE_MIN_MS;
+            return true;
+          };
 
           fallbackRects:
           for (const rect of passCandidates) {
@@ -4256,8 +4303,11 @@
                 if (passTries >= passMaxTries) break fallbackRects;
                 if (cancelOptimize) break fallbackRects;
                 const mode = `${passLabel} ${order}${rot ? ' rot' : ''}`.trim();
-                setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
-                if (passTries % stride === 0) updateOptLive(`${passLabel}\n${rect.w}x${rect.h} | ${order}${rot ? ' rot' : ''}`, solutions[0] || null);
+                const wantsUi = passTries % stride === 0;
+                if (shouldUpdateUi(wantsUi)) {
+                  setOptimizeStatus({ rect, mode, hits: solutions.length, best: solutions[0] || null });
+                  updateOptLive(`${passLabel}\n${rect.w}x${rect.h} | ${order}${rot ? ' rot' : ''}`, solutions[0] || null);
+                }
                 const beforeDiag = captureDiagSnapshot();
                 const attemptDebug = {};
                 const sol = packSolidRect(clusters, rect.w, rect.h, order, rot, attemptDebug);
@@ -4270,7 +4320,7 @@
                   recordInvalidAttempt({ pass: passLabel, rect, order, rot, reason: reason || 'fallback.failed_unknown', debug: attemptDebug });
                 }
                 passTries++;
-                if (passTries % stride === 0) {
+                if (shouldUpdateUi(passTries % stride === 0 || passTries >= passMaxTries)) {
                   const bestText = solutions[0] ? ` | beste ${solutions[0].bbox.w}x${solutions[0].bbox.h}` : '';
                   setStatus(`${passLabel} ${passTries}/${passMaxTries}${bestText}`, Math.min(97, (passTries / passMaxTries) * 100));
                   await tick();

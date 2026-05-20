@@ -1,0 +1,2170 @@
+﻿
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ANNO 117 Optimizer Fresh</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #141516;
+      --panel: #202325;
+      --panel-2: #292d2f;
+      --panel-3: #181a1b;
+      --line: #3f4648;
+      --line-soft: rgba(255,255,255,.08);
+      --text: #f4efe5;
+      --muted: #aeb6b3;
+      --gold: #d6a84f;
+      --gold-2: #f0c56a;
+      --blue: #65a7c8;
+      --green: #79b26b;
+      --red: #c26a58;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      font-family: Segoe UI, system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 70% 12%, rgba(101,167,200,.1), transparent 30%), var(--bg);
+      color: var(--text);
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 390px 1fr;
+      gap: 0;
+      height: 100vh;
+    }
+    .app > aside.panel {
+      min-width: 0;
+      min-height: 0;
+      height: 100vh;
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      overflow-x: hidden;
+      box-shadow: 12px 0 36px rgba(0,0,0,.24);
+      border-radius: 0;
+    }
+    .app > main.main {
+      min-width: 0;
+      min-height: 0;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      background: #161819;
+      padding: 12px;
+      gap: 12px;
+    }
+    .panel-header {
+      padding: 18px 18px 16px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #252829, #1b1d1e);
+    }
+    .title {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--gold-2);
+      font-weight: 750;
+    }
+    .sub {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .controls {
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      border-bottom: 1px solid var(--line);
+      background: #202325;
+    }
+    button, input {
+      font: inherit;
+    }
+    button {
+      min-height: 36px;
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+      background: #303638;
+      color: var(--text);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 10px;
+      transition: border-color .14s ease, background .14s ease, transform .14s ease;
+    }
+    button:hover { border-color: var(--gold); background: #3b4244; transform: translateY(-1px); }
+    button.primary {
+      grid-column: 1 / -1;
+      min-height: 44px;
+      font-weight: 750;
+      font-size: 14px;
+      color: #171511;
+      background: linear-gradient(180deg, #f2c86e, #c89435);
+      border-color: #ffe0a0;
+      box-shadow: 0 8px 22px rgba(214,168,79,.18);
+    }
+    button.warn { border-color: var(--red); color: #ffd7d0; }
+    button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+    .catalog-wrap {
+      padding: 10px 14px 14px;
+      background: var(--panel-3);
+      min-height: 0;
+      flex: 1 1 auto;
+      overflow: auto;
+    }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 0;
+      margin: 0 0 8px 0;
+      background: #1f2224;
+    }
+    summary {
+      cursor: pointer;
+      padding: 7px 10px;
+      color: var(--gold-2);
+      font-weight: 600;
+      user-select: none;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 9px;
+      border-top: 1px solid var(--line-soft);
+      font-size: 13px;
+      background: #202426;
+    }
+    .row.has-count { background: #2d332d; border-color: rgba(121,178,107,.45); }
+    .row-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .swatch {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,.2);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
+      flex: 0 0 auto;
+    }
+    .name { font-size: 13px; line-height: 1.15; font-weight: 650; }
+    .meta { color: var(--muted); font-size: 12px; }
+    .counter { display: flex; align-items: center; gap: 6px; }
+    .counter input {
+      width: 56px;
+      height: 30px;
+      background: #101213;
+      border: 1px solid var(--line-soft);
+      color: var(--text);
+      border-radius: 5px;
+      padding: 0 6px;
+      text-align: center;
+    }
+    .counter .mini { width: 28px; height: 28px; padding: 0; font-size: 15px; font-weight: 700; }
+    .status {
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 0;
+      background: #1b1f20;
+    }
+    .bar {
+      height: 8px;
+      background: #111315;
+      border: 1px solid var(--line-soft);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .bar > div {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #d6a84f, #f0c56a);
+      transition: width .16s linear;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(560px, 1fr) 390px;
+      gap: 12px;
+      min-height: 0;
+    }
+    .map-wrap {
+      min-height: 0;
+      overflow-x: auto;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      position: relative;
+      padding: 28px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
+        #111314;
+      background-size: 32px 32px;
+      border: 1px solid var(--line);
+    }
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      background-color: #181b1c;
+      background-image:
+        linear-gradient(#2e3436 1px, transparent 1px),
+        linear-gradient(90deg, #2e3436 1px, transparent 1px);
+      background-size: 18px 18px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      box-shadow: 0 0 0 1px var(--line), 0 18px 55px rgba(0,0,0,.34);
+    }
+    .solutions {
+      border: 1px solid var(--line);
+      border-radius: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-height: 0;
+      background: #1b1f20;
+    }
+    .solutions .panel-header {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #202325;
+    }
+    .solutions .title {
+      font-size: 15px;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--text);
+      font-weight: 650;
+    }
+    .sol-list {
+      overflow: auto;
+      padding: 8px;
+      display: grid;
+      gap: 8px;
+      background: #171a1b;
+    }
+    .sol {
+      display: grid;
+      grid-template-columns: 90px 1fr;
+      gap: 8px;
+      border: 1px solid var(--line-soft);
+      border-radius: 0;
+      padding: 6px;
+      background: rgba(255,255,255,.02);
+      cursor: pointer;
+    }
+    .sol:hover { border-color: var(--gold); background: rgba(214,168,79,.08); }
+    .sol.active { border-color: var(--gold); box-shadow: inset 0 0 0 1px rgba(214,168,79,.25); }
+    .sol-canvas {
+      width: 90px;
+      height: 90px;
+      background: #101213;
+      border: 1px solid var(--line-soft);
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .sol-title { font-weight: 700; font-size: 13px; color: var(--gold-2); }
+    .sol-meta { color: var(--muted); font-size: 12px; line-height: 1.35; }
+    .tiny { font-size: 12px; color: var(--muted); }
+    @media (max-width: 1200px) {
+      body { overflow: auto; height: auto; }
+      .app { grid-template-columns: 1fr; height: auto; min-height: 100vh; }
+      .app > aside.panel { height: auto; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); }
+      .app > main.main { height: auto; min-height: 0; }
+      .workspace { grid-template-columns: 1fr; }
+      .catalog-wrap { max-height: 44vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="panel">
+      <div class="panel-header">
+        <div>
+          <div class="title">ANNO 117 Produktionsplaner</div>
+          <div class="sub">Fresh Build im Stil der alten Version</div>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="optimizeBtn" class="primary">Optimieren</button>
+        <button id="trainBtn">Training</button>
+        <button id="cancelBtn" class="warn" disabled>Stop</button>
+        <button id="resetCountsBtn">Mengen reset</button>
+        <button id="clearSolutionsBtn">Treffer leeren</button>
+      </div>
+      <div class="catalog-wrap" id="catalog"></div>
+    </aside>
+    <main class="main">
+      <section class="status panel">
+        <div id="statusText">Bereit.</div>
+        <div class="bar"><div id="progressBar"></div></div>
+        <div class="tiny" id="statusSub">Noch keine Berechnung gestartet.</div>
+      </section>
+      <section class="workspace">
+        <div class="map-wrap"><canvas id="map" width="1440" height="1440"></canvas></div>
+        <div class="solutions">
+          <div class="panel-header">
+            <div>
+              <div class="title">Loesungen</div>
+              <div class="sub" id="solutionsSub">0 Kandidaten</div>
+            </div>
+          </div>
+          <div class="sol-list" id="solutionList"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>
+    const GRID_W = 80;
+    const GRID_H = 80;
+    const CELL = 18;
+    const STORAGE_KEY = 'anno117_fresh_counts_v1';
+    const STRATEGY_WEIGHTS_KEY = 'anno117_fresh_strategy_weights_v1';
+
+    const CATALOG = [
+      { group: 'Infrastruktur', id: 'infra_lagerhaus', name: 'Lagerhaus', w: 6, h: 6, cat: 'infra', color: '#6a5a45', kind: 'building' },
+      { group: 'Latium: Brot', id: 'need_brot_weizenhof', name: 'Weizenhof', w: 3, h: 4, cat: 'prod', color: '#c2a14a', kind: 'building', fields: { id: 'field_wheat', name: 'Weizen-Feld', count: 140, unitW: 1, unitH: 1, color: '#bfa846' } },
+      { group: 'Latium: Brot', id: 'need_brot_baeckerei', name: 'Baeckerei', w: 4, h: 5, cat: 'prod', color: '#b7773a', kind: 'building' },
+      { group: 'Latium: Sandalen', id: 'need_sandalen_schweinehof', name: 'Schweinehof', w: 3, h: 4, cat: 'prod', color: '#a86b4a', kind: 'building', fields: { id: 'field_pigstall', name: 'Stall', count: 5, unitW: 2, unitH: 3, color: '#915d42', rotateSegments: true, brushAllowed: true, diagonalAllowed: true } },
+      { group: 'Latium: Sandalen', id: 'need_sandalen_gerberei', name: 'Gerberei', w: 3, h: 4, cat: 'prod', color: '#8b5a2b', kind: 'building' },
+      { group: 'Latium: Sandalen', id: 'need_sandalen_sandalenmacher', name: 'Sandalenmacher', w: 3, h: 4, cat: 'prod', color: '#b77b3a', kind: 'building' },
+      { group: 'Latium: Haferbrei', id: 'need_haferbrei_haferhof', name: 'Haferhof', w: 5, h: 5, cat: 'prod', color: '#7a8f3a', kind: 'building', fields: { id: 'field_oat', name: 'Hafer-Feld', count: 80, unitW: 1, unitH: 1, color: '#778d3a' } },
+      { group: 'Latium: Haferbrei', id: 'need_haferbrei_garkueche', name: 'Garkueche', w: 4, h: 4, cat: 'prod', color: '#a66a3f', kind: 'building' },
+      { group: 'Latium: Tuniken', id: 'need_tuniken_latium_hanfhof', name: 'Hanfhof', w: 4, h: 3, cat: 'prod', color: '#2d7a3b', kind: 'building', fields: { id: 'field_hemp', name: 'Hanf-Feld', count: 60, unitW: 1, unitH: 1, color: '#2f8a35' } },
+      { group: 'Latium: Tuniken', id: 'need_tuniken_latium_spinnerei', name: 'Spinnerei', w: 4, h: 3, cat: 'prod', color: '#a35b28', kind: 'building' },
+      { group: 'Albion: Tuniken', id: 'need_tuniken_hanfhof', name: 'Hanfhof', w: 3, h: 4, cat: 'prod', color: '#2d7a3b', kind: 'building', fields: { id: 'field_hemp', name: 'Hanf-Feld', count: 80, unitW: 1, unitH: 1, color: '#2f8a35' } },
+      { group: 'Albion: Tuniken', id: 'need_tuniken_spinnerei', name: 'Spinnerei', w: 3, h: 4, cat: 'prod', color: '#a35b28', kind: 'building' },
+      { group: 'Albion: Schilfschuhe', id: 'need_schilfschuhe_schilfsammler', name: 'Schilfsammler', w: 4, h: 4, cat: 'prod', color: '#2b7a4a', kind: 'building', fields: { id: 'field_reed', name: 'Schilf-Feld', count: 140, unitW: 1, unitH: 1, color: '#2b7a4a' } },
+      { group: 'Albion: Schilfschuhe', id: 'need_schilfschuhe_schuhweber', name: 'Schuhweber', w: 3, h: 4, cat: 'prod', color: '#8c5a2a', kind: 'building' }
+    ];
+
+    let counts = loadCounts();
+    let strategyWeights = loadStrategyWeights();
+    let activeSolutions = [];
+    let activeIndex = -1;
+    let worker = null;
+    let running = false;
+    let cancelRequested = false;
+    let trainingState = null;
+    const TRAIN_DEFAULT_RUNS = 40;
+    const TRAIN_MAX_RUNS = 400;
+
+    const catalogEl = document.getElementById('catalog');
+    const statusTextEl = document.getElementById('statusText');
+    const statusSubEl = document.getElementById('statusSub');
+    const progressBarEl = document.getElementById('progressBar');
+    const mapCanvas = document.getElementById('map');
+    const solutionListEl = document.getElementById('solutionList');
+    const solutionsSubEl = document.getElementById('solutionsSub');
+    const optimizeBtnEl = document.getElementById('optimizeBtn');
+    const trainBtnEl = document.getElementById('trainBtn');
+    const cancelBtnEl = document.getElementById('cancelBtn');
+
+    function loadCounts() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return Object.fromEntries(CATALOG.map(c => [c.id, 0]));
+        const parsed = JSON.parse(raw);
+        const next = Object.fromEntries(CATALOG.map(c => [c.id, 0]));
+        for (const c of CATALOG) {
+          const n = Math.floor(Number(parsed[c.id]) || 0);
+          next[c.id] = Math.max(0, Math.min(999, n));
+        }
+        return next;
+      } catch {
+        return Object.fromEntries(CATALOG.map(c => [c.id, 0]));
+      }
+    }
+
+    function saveCounts() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(counts));
+    }
+
+    function loadStrategyWeights() {
+      try {
+        const raw = localStorage.getItem(STRATEGY_WEIGHTS_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function saveStrategyWeights(weights) {
+      try {
+        localStorage.setItem(STRATEGY_WEIGHTS_KEY, JSON.stringify(weights || {}));
+      } catch {
+        // ignore storage errors
+      }
+    }
+
+    function setStatus(text, sub = '', pct = null) {
+      statusTextEl.textContent = text;
+      statusSubEl.textContent = sub || '';
+      if (pct != null) progressBarEl.style.width = `${Math.max(0, Math.min(100, pct)).toFixed(1)}%`;
+    }
+
+    function setRunUi(active) {
+      optimizeBtnEl.disabled = !!active;
+      trainBtnEl.disabled = !!active;
+      cancelBtnEl.disabled = !active;
+    }
+
+    function solutionLayoutKey(sol) {
+      if (!sol || !Array.isArray(sol.items) || !sol.bbox) return '';
+      const core = sol.items
+        .filter(it => it.kind === 'building')
+        .map(it => `${it.id}:${it.x},${it.y},${it.w},${it.h}`)
+        .sort()
+        .join('|');
+      return `${sol.bbox.w}x${sol.bbox.h}|${core}`;
+    }
+
+    function changeCount(id, delta) {
+      counts[id] = Math.max(0, Math.min(999, (counts[id] || 0) + delta));
+      saveCounts();
+      buildCatalog();
+    }
+
+    function buildCatalog() {
+      catalogEl.innerHTML = '';
+      const groups = [...new Set(CATALOG.map(c => c.group))];
+      for (const group of groups) {
+        const details = document.createElement('details');
+        details.open = true;
+        const summary = document.createElement('summary');
+        summary.textContent = group;
+        details.appendChild(summary);
+
+        for (const c of CATALOG.filter(x => x.group === group)) {
+          const row = document.createElement('div');
+          row.className = 'row';
+          const fields = c.fields ? ` | Felder ${c.fields.count} (${c.fields.unitW}x${c.fields.unitH})` : '';
+          if ((counts[c.id] || 0) > 0) row.classList.add('has-count');
+          row.innerHTML = `<div class="row-main"><div class="swatch" style="background:${c.color};"></div><div><div class="name">${c.name}</div><div class="meta">${c.w}x${c.h}${fields}</div></div></div>`;
+
+          const right = document.createElement('div');
+          right.className = 'counter';
+          const minus = document.createElement('button');
+          minus.className = 'mini';
+          minus.textContent = '-';
+          minus.addEventListener('click', () => changeCount(c.id, -1));
+
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.min = '0';
+          input.max = '999';
+          input.value = String(counts[c.id] || 0);
+          input.addEventListener('change', () => {
+            const n = Math.max(0, Math.min(999, Math.floor(Number(input.value) || 0)));
+            counts[c.id] = n;
+            input.value = String(n);
+            saveCounts();
+          });
+
+          const plus = document.createElement('button');
+          plus.className = 'mini';
+          plus.textContent = '+';
+          plus.addEventListener('click', () => changeCount(c.id, 1));
+
+          right.appendChild(minus);
+          right.appendChild(input);
+          right.appendChild(plus);
+          row.appendChild(right);
+          details.appendChild(row);
+        }
+        catalogEl.appendChild(details);
+      }
+    }
+
+    function totalSelected() {
+      return Object.values(counts).reduce((s, n) => s + n, 0);
+    }
+
+    function ensureWorker() {
+      if (worker) return worker;
+      const workerSource = `
+        let cancelled = false;
+        function rng(seed) {
+          let s = seed >>> 0;
+          return () => {
+            s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
+            return ((s >>> 0) / 4294967296);
+          };
+        }
+        function key(x, y) { return x + ',' + y; }
+        function boundingBox(items) {
+          if (!items.length) return null;
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const it of items) {
+            minX = Math.min(minX, it.x); minY = Math.min(minY, it.y);
+            maxX = Math.max(maxX, it.x + it.w); maxY = Math.max(maxY, it.y + it.h);
+          }
+          return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY, area: (maxX - minX) * (maxY - minY) };
+        }
+        function buildInstances(counts, catalog) {
+          const out = [];
+          let uid = 1;
+          for (const c of catalog) {
+            const n = Math.max(0, Math.floor(Number(counts[c.id]) || 0));
+            for (let i = 0; i < n; i++) {
+              out.push({ uid: 'b' + uid++, id: c.id, name: c.name, w: c.w, h: c.h, color: c.color, kind: 'building', fields: c.fields ? { ...c.fields } : null });
+            }
+          }
+          if (out.length && !out.some(x => x.id === 'infra_lagerhaus')) {
+            const wh = catalog.find(c => c.id === 'infra_lagerhaus');
+            if (wh) out.unshift({ uid: 'b' + uid++, id: wh.id, name: wh.name, w: wh.w, h: wh.h, color: wh.color, kind: 'building', fields: null });
+          }
+          return out;
+        }
+        function makeBlocked(w, h, items) {
+          const grid = Array.from({ length: w }, () => Array(h).fill(false));
+          for (const it of items) {
+            for (let y = it.y; y < it.y + it.h; y++) {
+              for (let x = it.x; x < it.x + it.w; x++) {
+                if (x >= 0 && y >= 0 && x < w && y < h) grid[x][y] = true;
+              }
+            }
+          }
+          return grid;
+        }
+        const STRATEGY_NAMES = [
+          'row_area_gap0',
+          'row_height_gap0',
+          'row_width_gap0',
+          'row_area_gap1',
+          'col_area_gap0',
+          'row_square_gap0',
+          'row_processing_gap1'
+        ];
+
+        function clamp(v, lo, hi) {
+          return Math.max(lo, Math.min(hi, v));
+        }
+
+        function sanitizeStrategyWeights(raw) {
+          const out = {};
+          for (const name of STRATEGY_NAMES) {
+            const n = Number(raw && raw[name]);
+            out[name] = Number.isFinite(n) ? clamp(n, 0.15, 8) : 1;
+          }
+          return out;
+        }
+
+        function weightedPickStrategy(weights, rnd) {
+          const list = STRATEGY_NAMES.map(name => ({ name, w: Math.max(0.001, Number(weights[name]) || 0.001) }));
+          const sum = list.reduce((s, x) => s + x.w, 0);
+          let r = rnd() * sum;
+          for (const entry of list) {
+            r -= entry.w;
+            if (r <= 0) return entry.name;
+          }
+          return list[list.length - 1].name;
+        }
+
+        function sortForStrategy(buildings, strategy, rnd) {
+          const copy = buildings.map(b => ({ ...b, jitter: rnd() }));
+          if (strategy === 'row_processing_gap1') {
+            const prio = b => {
+              if (b.id === 'infra_lagerhaus') return 10000;
+              if (b.id && b.id.includes('schweinehof')) return 9000;
+              if (b.id && b.id.includes('gerberei')) return 8700;
+              if (b.id && b.id.includes('sandalenmacher')) return 8600;
+              if (b.fields && b.fields.id === 'field_pigstall') return 8500;
+              return (b.w * b.h);
+            };
+            copy.sort((a, b) => prio(b) - prio(a) || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
+            return copy;
+          }
+          if (strategy === 'row_height_gap0') {
+            copy.sort((a, b) => b.h - a.h || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
+            return copy;
+          }
+          if (strategy === 'row_width_gap0') {
+            copy.sort((a, b) => b.w - a.w || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
+            return copy;
+          }
+          if (strategy === 'row_square_gap0') {
+            copy.sort((a, b) => Math.abs(a.w - a.h) - Math.abs(b.w - b.h) || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
+            return copy;
+          }
+          copy.sort((a, b) => (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
+          return copy;
+        }
+
+        function rotatedVariant(b) {
+          return { ...b, w: b.h, h: b.w };
+        }
+        function buildingVariants(b) {
+          if (b.w === b.h) return [b];
+          if (b.id === 'infra_lagerhaus') return [b];
+          return [b, rotatedVariant(b)];
+        }
+        function pickBestRowVariant(b, x, y, rowMaxX, rowMaxY) {
+          let best = null;
+          for (const v of buildingVariants(b)) {
+            if (x + v.w > rowMaxX) continue;
+            if (y + v.h > rowMaxY) continue;
+            const score = (v.h * 5) + v.w;
+            if (!best || score < best.score) best = { item: v, score };
+          }
+          return best ? best.item : null;
+        }
+        function pickBestColVariant(b, x, y, colMaxX, colMaxY) {
+          let best = null;
+          for (const v of buildingVariants(b)) {
+            if (x + v.w > colMaxX) continue;
+            if (y + v.h > colMaxY) continue;
+            const score = (v.w * 5) + v.h;
+            if (!best || score < best.score) best = { item: v, score };
+          }
+          return best ? best.item : null;
+        }
+
+        function packRowsGeneric(buildings, w, h, gap) {
+          const innerW = w - 2, innerH = h - 2;
+          if (innerW < 6 || innerH < 6) return null;
+          const placed = [];
+          let x = 1, y = 1, rowH = 0;
+          for (const b of buildings) {
+            const rowMaxX = 1 + innerW;
+            const rowMaxY = 1 + innerH;
+            let pick = pickBestRowVariant(b, x, y, rowMaxX, rowMaxY);
+            if (!pick) {
+              x = 1;
+              y += rowH + gap;
+              rowH = 0;
+              pick = pickBestRowVariant(b, x, y, rowMaxX, rowMaxY);
+            }
+            if (!pick) return null;
+            placed.push({ ...pick, x, y });
+            x += pick.w + gap;
+            rowH = Math.max(rowH, pick.h);
+          }
+          return placed;
+        }
+
+        function packColsGeneric(buildings, w, h, gap) {
+          const innerW = w - 2, innerH = h - 2;
+          if (innerW < 6 || innerH < 6) return null;
+          const placed = [];
+          let x = 1, y = 1, colW = 0;
+          for (const b of buildings) {
+            const colMaxX = 1 + innerW;
+            const colMaxY = 1 + innerH;
+            let pick = pickBestColVariant(b, x, y, colMaxX, colMaxY);
+            if (!pick) {
+              y = 1;
+              x += colW + gap;
+              colW = 0;
+              pick = pickBestColVariant(b, x, y, colMaxX, colMaxY);
+            }
+            if (!pick) return null;
+            placed.push({ ...pick, x, y });
+            y += pick.h + gap;
+            colW = Math.max(colW, pick.w);
+          }
+          return placed;
+        }
+
+        function packWithStrategy(buildings, w, h, rnd, strategy) {
+          const ordered = sortForStrategy(buildings, strategy, rnd);
+          if (strategy === 'row_processing_gap1') return packRowsGeneric(ordered, w, h, 1);
+          if (strategy === 'row_area_gap1') return packRowsGeneric(ordered, w, h, 1);
+          if (strategy === 'col_area_gap0') return packColsGeneric(ordered, w, h, 0);
+          return packRowsGeneric(ordered, w, h, 0);
+        }
+        function findAdjAnchor(building, blocked, roadSet) {
+          const W = blocked.length, H = blocked[0].length;
+          const out = [];
+          for (let x = building.x; x < building.x + building.w; x++) { out.push({ x, y: building.y - 1 }); out.push({ x, y: building.y + building.h }); }
+          for (let y = building.y; y < building.y + building.h; y++) { out.push({ x: building.x - 1, y }); out.push({ x: building.x + building.w, y }); }
+          out.sort((a, b) => a.x - b.x || a.y - b.y);
+          for (const p of out) {
+            if (p.x < 0 || p.y < 0 || p.x >= W || p.y >= H) continue;
+            if (blocked[p.x][p.y]) continue;
+            if (roadSet.has(key(p.x, p.y))) return p;
+          }
+          for (const p of out) {
+            if (p.x < 0 || p.y < 0 || p.x >= W || p.y >= H) continue;
+            if (!blocked[p.x][p.y]) return p;
+          }
+          return null;
+        }
+        function bfsPathToRoad(start, blocked, roadSet) {
+          const W = blocked.length, H = blocked[0].length;
+          const q = [start], seen = new Set([key(start.x, start.y)]), parent = new Map();
+          while (q.length) {
+            const cur = q.shift();
+            const ck = key(cur.x, cur.y);
+            if (roadSet.has(ck)) {
+              const path = [];
+              let walk = ck;
+              while (walk) {
+                const [sx, sy] = walk.split(',').map(Number);
+                path.push({ x: sx, y: sy });
+                walk = parent.get(walk);
+              }
+              path.reverse();
+              return path;
+            }
+            const neigh = [{ x: cur.x + 1, y: cur.y }, { x: cur.x - 1, y: cur.y }, { x: cur.x, y: cur.y + 1 }, { x: cur.x, y: cur.y - 1 }];
+            for (const n of neigh) {
+              if (n.x < 0 || n.y < 0 || n.x >= W || n.y >= H) continue;
+              if (blocked[n.x][n.y]) continue;
+              const nk = key(n.x, n.y);
+              if (seen.has(nk)) continue;
+              seen.add(nk);
+              parent.set(nk, ck);
+              q.push(n);
+            }
+          }
+          return null;
+        }
+        function addRoadNetwork(buildings, blocked, w, h, forbidden = null) {
+          const isBlocked = (x, y) => {
+            if (blocked[x][y]) return true;
+            if (!forbidden) return false;
+            return forbidden.has(key(x, y));
+          };
+          const roadSet = new Set();
+          const warehouse = buildings.find(b => b.id === 'infra_lagerhaus') || buildings[0] || null;
+          if (warehouse) {
+            const seeds = [];
+            for (let x = warehouse.x; x < warehouse.x + warehouse.w; x++) {
+              seeds.push({ x, y: warehouse.y - 1 });
+              seeds.push({ x, y: warehouse.y + warehouse.h });
+            }
+            for (let y = warehouse.y; y < warehouse.y + warehouse.h; y++) {
+              seeds.push({ x: warehouse.x - 1, y });
+              seeds.push({ x: warehouse.x + warehouse.w, y });
+            }
+            seeds.sort((a, b) => a.x - b.x || a.y - b.y);
+            let seed = null;
+            for (const p of seeds) {
+              if (p.x < 0 || p.y < 0 || p.x >= w || p.y >= h) continue;
+              if (isBlocked(p.x, p.y)) continue;
+              seed = p;
+              break;
+            }
+            if (!seed) {
+              const cx = warehouse.x + Math.floor(warehouse.w / 2);
+              const cy = warehouse.y + Math.floor(warehouse.h / 2);
+              let best = null;
+              let bestDist = Infinity;
+              for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                  if (isBlocked(x, y)) continue;
+                  const dist = Math.abs(x - cx) + Math.abs(y - cy);
+                  if (dist < bestDist) {
+                    bestDist = dist;
+                    best = { x, y };
+                  }
+                }
+              }
+              seed = best;
+            }
+            if (seed) roadSet.add(key(seed.x, seed.y));
+          }
+          for (const b of buildings) {
+            const anchor = (() => {
+              const W = blocked.length, H = blocked[0].length;
+              const out = [];
+              for (let x = b.x; x < b.x + b.w; x++) { out.push({ x, y: b.y - 1 }); out.push({ x, y: b.y + b.h }); }
+              for (let y = b.y; y < b.y + b.h; y++) { out.push({ x: b.x - 1, y }); out.push({ x: b.x + b.w, y }); }
+              out.sort((a, b2) => a.x - b2.x || a.y - b2.y);
+              for (const p of out) {
+                if (p.x < 0 || p.y < 0 || p.x >= W || p.y >= H) continue;
+                if (isBlocked(p.x, p.y)) continue;
+                if (roadSet.has(key(p.x, p.y))) return p;
+              }
+              for (const p of out) {
+                if (p.x < 0 || p.y < 0 || p.x >= W || p.y >= H) continue;
+                if (!isBlocked(p.x, p.y)) return p;
+              }
+              return null;
+            })();
+            if (!anchor) continue;
+            const path = (() => {
+              const W = blocked.length, H = blocked[0].length;
+              const q = [anchor], seen = new Set([key(anchor.x, anchor.y)]), parent = new Map();
+              while (q.length) {
+                const cur = q.shift();
+                const ck = key(cur.x, cur.y);
+                if (roadSet.has(ck)) {
+                  const out = [];
+                  let walk = ck;
+                  while (walk) {
+                    const [sx, sy] = walk.split(',').map(Number);
+                    out.push({ x: sx, y: sy });
+                    walk = parent.get(walk);
+                  }
+                  out.reverse();
+                  return out;
+                }
+                const neigh = [{ x: cur.x + 1, y: cur.y }, { x: cur.x - 1, y: cur.y }, { x: cur.x, y: cur.y + 1 }, { x: cur.x, y: cur.y - 1 }];
+                for (const n of neigh) {
+                  if (n.x < 0 || n.y < 0 || n.x >= W || n.y >= H) continue;
+                  if (isBlocked(n.x, n.y)) continue;
+                  const nk = key(n.x, n.y);
+                  if (seen.has(nk)) continue;
+                  seen.add(nk);
+                  parent.set(nk, ck);
+                  q.push(n);
+                }
+              }
+              return null;
+            })();
+            if (!path) continue;
+            for (const step of path) roadSet.add(key(step.x, step.y));
+          }
+          const roads = [];
+          for (const s of roadSet) {
+            const [x, y] = s.split(',').map(Number);
+            if (x < 0 || y < 0 || x >= w || y >= h) continue;
+            if (blocked[x][y]) continue;
+            roads.push({ id: 'road_feldweg', kind: 'road', name: 'Feldweg', x, y, w: 1, h: 1, color: '#665539' });
+          }
+          return roads;
+        }
+        function farmAdjacentSeeds(farm, w, h) {
+          const out = [];
+          for (let x = farm.x; x < farm.x + farm.w; x++) { out.push({ x, y: farm.y - 1 }); out.push({ x, y: farm.y + farm.h }); }
+          for (let y = farm.y; y < farm.y + farm.h; y++) { out.push({ x: farm.x - 1, y }); out.push({ x: farm.x + farm.w, y }); }
+          return out.filter(p => p.x >= 0 && p.y >= 0 && p.x < w && p.y < h);
+        }
+        function placeTileFields(farm, spec, blocked, occ, out) {
+          const W = blocked.length, H = blocked[0].length;
+          const need = Math.max(0, Math.floor(spec.count || 0));
+          const seeds = farmAdjacentSeeds(farm, W, H);
+          const frontier = [];
+          const frontierSet = new Set();
+          const pushFrontier = (x, y) => {
+            if (x < 0 || y < 0 || x >= W || y >= H) return;
+            const k = key(x, y);
+            if (frontierSet.has(k)) return;
+            if (blocked[x][y] || occ.has(k)) return;
+            frontierSet.add(k);
+            frontier.push({ x, y });
+          };
+          for (const s of seeds) pushFrontier(s.x, s.y);
+
+          let placed = 0;
+          while (frontier.length && placed < need) {
+            const cur = frontier.shift();
+            frontierSet.delete(key(cur.x, cur.y));
+            const k = key(cur.x, cur.y);
+            if (blocked[cur.x][cur.y] || occ.has(k)) continue;
+            occ.add(k);
+            out.push({ id: spec.id, kind: 'field', name: spec.name, x: cur.x, y: cur.y, w: 1, h: 1, color: spec.color || '#8a8', farmUid: farm.uid });
+            placed++;
+
+            // Connectivity rule: only expand from already valid own-field tiles.
+            pushFrontier(cur.x + 1, cur.y);
+            pushFrontier(cur.x - 1, cur.y);
+            pushFrontier(cur.x, cur.y + 1);
+            pushFrontier(cur.x, cur.y - 1);
+          }
+          return Math.max(0, need - placed);
+        }
+        function placeRectFields(farm, spec, blocked, occ, out) {
+          const W = blocked.length, H = blocked[0].length;
+          const unitW = Math.max(1, Math.floor(spec.unitW || 1));
+          const unitH = Math.max(1, Math.floor(spec.unitH || 1));
+          const need = Math.max(0, Math.floor(spec.count || 0));
+          const rotateSegments = !!spec.rotateSegments || (unitW !== unitH);
+          const brushAllowed = !!spec.brushAllowed;
+          const ownRects = [];
+          let placed = 0;
+          const touchesByEdge = (a, b) => (
+            ((a.x + a.w === b.x || b.x + b.w === a.x) && Math.max(a.y, b.y) < Math.min(a.y + a.h, b.y + b.h))
+            || ((a.y + a.h === b.y || b.y + b.h === a.y) && Math.max(a.x, b.x) < Math.min(a.x + a.w, b.x + b.w))
+          );
+          const touchesByCorner = (a, b) => (
+            (a.x === b.x + b.w && a.y === b.y + b.h)
+            || (a.x + a.w === b.x && a.y === b.y + b.h)
+            || (a.x === b.x + b.w && a.y + a.h === b.y)
+            || (a.x + a.w === b.x && a.y + a.h === b.y)
+          );
+          const touchesByCornerOrEdge = (a, b) => touchesByEdge(a, b) || (spec.diagonalAllowed && touchesByCorner(a, b));
+          const touchesFarmBuilding = rect => touchesByEdge(rect, { x: farm.x, y: farm.y, w: farm.w, h: farm.h });
+          const rectOk = rect => {
+            if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > W || rect.y + rect.h > H) return false;
+            for (let yy = rect.y; yy < rect.y + rect.h; yy++) {
+              for (let xx = rect.x; xx < rect.x + rect.w; xx++) {
+                const k = key(xx, yy);
+                if (blocked[xx][yy] || occ.has(k)) return false;
+              }
+            }
+            return true;
+          };
+          const rectAdjScore = rect => {
+            let c = 0;
+            const farmRect = { x: farm.x, y: farm.y, w: farm.w, h: farm.h };
+            if (touchesByCornerOrEdge(rect, farmRect)) c += 4;
+            for (const r2 of ownRects) {
+              if (touchesByCornerOrEdge(rect, r2)) c += 2;
+            }
+            return c;
+          };
+          const variants = [{ w: unitW, h: unitH }];
+          if (rotateSegments && (unitW !== unitH)) variants.push({ w: unitH, h: unitW });
+          const sideScores = [
+            { side: 'right', score: 0 },
+            { side: 'left', score: 0 },
+            { side: 'bottom', score: 0 },
+            { side: 'top', score: 0 }
+          ];
+          const sideProbe = (x, y) => (x >= 0 && y >= 0 && x < W && y < H && !blocked[x][y] && !occ.has(key(x, y))) ? 1 : -1;
+          for (const s of sideScores) {
+            if (s.side === 'right') {
+              for (let dx = 0; dx < 8; dx++) for (let y = farm.y - 5; y < farm.y + farm.h + 5; y++) s.score += sideProbe(farm.x + farm.w + dx, y);
+            } else if (s.side === 'left') {
+              for (let dx = 0; dx < 8; dx++) for (let y = farm.y - 5; y < farm.y + farm.h + 5; y++) s.score += sideProbe(farm.x - 1 - dx, y);
+            } else if (s.side === 'bottom') {
+              for (let dy = 0; dy < 8; dy++) for (let x = farm.x - 5; x < farm.x + farm.w + 5; x++) s.score += sideProbe(x, farm.y + farm.h + dy);
+            } else {
+              for (let dy = 0; dy < 8; dy++) for (let x = farm.x - 5; x < farm.x + farm.w + 5; x++) s.score += sideProbe(x, farm.y - 1 - dy);
+            }
+          }
+          sideScores.sort((a, b) => b.score - a.score);
+          const primarySide = sideScores[0].side;
+          const centerX = farm.x + Math.floor(farm.w / 2);
+          const centerY = farm.y + Math.floor(farm.h / 2);
+
+          const candidateScore = rect => {
+            let layer = 0;
+            if (primarySide === 'right') layer = Math.max(0, rect.x - (farm.x + farm.w));
+            if (primarySide === 'left') layer = Math.max(0, farm.x - (rect.x + rect.w));
+            if (primarySide === 'bottom') layer = Math.max(0, rect.y - (farm.y + farm.h));
+            if (primarySide === 'top') layer = Math.max(0, farm.y - (rect.y + rect.h));
+            const align = Math.abs((rect.x + Math.floor(rect.w / 2)) - centerX) + Math.abs((rect.y + Math.floor(rect.h / 2)) - centerY);
+            const adj = rectAdjScore(rect);
+            return (layer * 3.8) + (align * 0.35) - (adj * 4.2);
+          };
+
+          const placeRect = rect => {
+            for (let yy = rect.y; yy < rect.y + rect.h; yy++) for (let xx = rect.x; xx < rect.x + rect.w; xx++) occ.add(key(xx, yy));
+            out.push({ id: spec.id, kind: 'field', name: spec.name, x: rect.x, y: rect.y, w: rect.w, h: rect.h, color: spec.color || '#8a8', farmUid: farm.uid });
+            ownRects.push(rect);
+            placed++;
+          };
+
+          const farmRect = { x: farm.x, y: farm.y, w: farm.w, h: farm.h };
+          while (placed < need) {
+            let best = null;
+            let bestScore = Infinity;
+            for (const v of variants) {
+              for (let y = Math.max(0, farm.y - 18); y <= Math.min(H - v.h, farm.y + farm.h + 18); y++) {
+                for (let x = Math.max(0, farm.x - 18); x <= Math.min(W - v.w, farm.x + farm.w + 18); x++) {
+                  const rect = { x, y, w: v.w, h: v.h };
+                  if (!rectOk(rect)) continue;
+                  const connected = touchesByCornerOrEdge(rect, farmRect) || ownRects.some(r2 => touchesByCornerOrEdge(rect, r2));
+                  if (!connected) continue;
+                  const score = candidateScore(rect);
+                  if (score < bestScore) {
+                    bestScore = score;
+                    best = rect;
+                  }
+                }
+              }
+            }
+            if (!best) break;
+            placeRect(best);
+          }
+
+          if (placed < need && brushAllowed) {
+            const needCells = (need - placed) * unitW * unitH;
+            const ownCells = new Set();
+            for (const r of ownRects) for (let yy = r.y; yy < r.y + r.h; yy++) for (let xx = r.x; xx < r.x + r.w; xx++) ownCells.add(key(xx, yy));
+            const frontier = [];
+            const frontierSet = new Set();
+            const push = (x, y) => {
+              if (x < 0 || y < 0 || x >= W || y >= H) return;
+              const k = key(x, y);
+              if (frontierSet.has(k)) return;
+              if (blocked[x][y] || occ.has(k)) return;
+              frontierSet.add(k);
+              frontier.push({ x, y });
+            };
+            for (let x = farm.x; x < farm.x + farm.w; x++) { push(x, farm.y - 1); push(x, farm.y + farm.h); }
+            for (let y = farm.y; y < farm.y + farm.h; y++) { push(farm.x - 1, y); push(farm.x + farm.w, y); }
+            for (const r of ownRects) {
+              for (let xx = r.x; xx < r.x + r.w; xx++) { push(xx, r.y - 1); push(xx, r.y + r.h); }
+              for (let yy = r.y; yy < r.y + r.h; yy++) { push(r.x - 1, yy); push(r.x + r.w, yy); }
+            }
+            let brushPlaced = 0;
+            while (frontier.length && brushPlaced < needCells) {
+              frontier.sort((a, b) => {
+                const da = Math.abs(a.x - centerX) + Math.abs(a.y - centerY);
+                const db = Math.abs(b.x - centerX) + Math.abs(b.y - centerY);
+                return da - db;
+              });
+              const cur = frontier.shift();
+              frontierSet.delete(key(cur.x, cur.y));
+              const k = key(cur.x, cur.y);
+              if (blocked[cur.x][cur.y] || occ.has(k)) continue;
+              let touching = false;
+              const neigh = [{ x: cur.x + 1, y: cur.y }, { x: cur.x - 1, y: cur.y }, { x: cur.x, y: cur.y + 1 }, { x: cur.x, y: cur.y - 1 }];
+              for (const n of neigh) if (ownCells.has(key(n.x, n.y))) { touching = true; break; }
+              if (!touching) {
+                if ((cur.x >= farm.x && cur.x < farm.x + farm.w && (cur.y === farm.y - 1 || cur.y === farm.y + farm.h))
+                  || (cur.y >= farm.y && cur.y < farm.y + farm.h && (cur.x === farm.x - 1 || cur.x === farm.x + farm.w))) touching = true;
+              }
+              if (!touching) continue;
+              occ.add(k);
+              ownCells.add(k);
+              out.push({ id: spec.id, kind: 'field', name: spec.name, x: cur.x, y: cur.y, w: 1, h: 1, color: spec.color || '#8a8', farmUid: farm.uid });
+              brushPlaced++;
+              push(cur.x + 1, cur.y);
+              push(cur.x - 1, cur.y);
+              push(cur.x, cur.y + 1);
+              push(cur.x, cur.y - 1);
+            }
+            if (brushPlaced >= needCells) placed = need;
+          }
+          return Math.max(0, need - placed);
+        }
+        function overlap1D(a0, a1, b0, b1) {
+          return a0 < b1 && a1 > b0;
+        }
+        function touchesByEdge(a, b) {
+          return (
+            ((a.x + a.w === b.x || b.x + b.w === a.x) && overlap1D(a.y, a.y + a.h, b.y, b.y + b.h))
+            || ((a.y + a.h === b.y || b.y + b.h === a.y) && overlap1D(a.x, a.x + a.w, b.x, b.x + b.w))
+          );
+        }
+        function validateFarmFieldConnectivity(buildings, fields) {
+          const farms = buildings.filter(b => b.fields && Number(b.fields.count) > 0);
+          for (const farm of farms) {
+            const need = Math.max(0, Math.floor(Number(farm.fields?.count) || 0));
+            const unitArea = Math.max(1, (Number(farm.fields?.unitW) || 1) * (Number(farm.fields?.unitH) || 1));
+            const own = fields
+              .filter(f => f.farmUid === farm.uid)
+              .map(f => ({ x: f.x, y: f.y, w: f.w, h: f.h }));
+            const ownArea = own.reduce((s, r) => s + (r.w * r.h), 0);
+            if (ownArea + 1e-6 < (need * unitArea)) return false;
+            if (!own.length) continue;
+
+            const farmRect = { x: farm.x, y: farm.y, w: farm.w, h: farm.h };
+            const touched = new Set();
+            const queue = [];
+            for (let i = 0; i < own.length; i++) {
+              if (touchesByEdge(own[i], farmRect)) {
+                touched.add(i);
+                queue.push(i);
+              }
+            }
+            if (!queue.length) return false;
+
+            while (queue.length) {
+              const curIdx = queue.shift();
+              const cur = own[curIdx];
+              for (let i = 0; i < own.length; i++) {
+                if (touched.has(i)) continue;
+                if (!touchesByEdge(cur, own[i])) continue;
+                touched.add(i);
+                queue.push(i);
+              }
+            }
+            if (touched.size !== own.length) return false;
+          }
+          return true;
+        }
+        function validateRoadConnectivity(buildings, roads) {
+          if (!buildings.length) return false;
+          if (!roads.length) return false;
+          const warehouse = buildings.find(b => b.id === 'infra_lagerhaus') || buildings[0];
+          if (!warehouse) return false;
+          const roadSet = new Set(roads.map(r => key(r.x, r.y)));
+
+          const adjacentRoadKeys = rect => {
+            const out = [];
+            for (let x = rect.x; x < rect.x + rect.w; x++) {
+              out.push(key(x, rect.y - 1));
+              out.push(key(x, rect.y + rect.h));
+            }
+            for (let y = rect.y; y < rect.y + rect.h; y++) {
+              out.push(key(rect.x - 1, y));
+              out.push(key(rect.x + rect.w, y));
+            }
+            return out.filter(k => roadSet.has(k));
+          };
+
+          const warehouseAdj = adjacentRoadKeys(warehouse);
+          if (!warehouseAdj.length) return false;
+
+          const seen = new Set(warehouseAdj);
+          const queue = warehouseAdj.map(v => {
+            const [x, y] = v.split(',').map(Number);
+            return { x, y };
+          });
+          while (queue.length) {
+            const cur = queue.shift();
+            const neigh = [
+              { x: cur.x + 1, y: cur.y },
+              { x: cur.x - 1, y: cur.y },
+              { x: cur.x, y: cur.y + 1 },
+              { x: cur.x, y: cur.y - 1 }
+            ];
+            for (const n of neigh) {
+              const nk = key(n.x, n.y);
+              if (!roadSet.has(nk) || seen.has(nk)) continue;
+              seen.add(nk);
+              queue.push(n);
+            }
+          }
+
+          for (const b of buildings) {
+            const adj = adjacentRoadKeys(b);
+            if (!adj.length) return false;
+            if (!adj.some(k => seen.has(k))) return false;
+          }
+          return true;
+        }
+        function orderFarmsForMode(farms, orderMode = 'desc_need', rnd = null) {
+          let out = farms.slice();
+          if (orderMode === 'desc_need') out.sort((a, b) => (Number(b.fields?.count) || 0) - (Number(a.fields?.count) || 0));
+          if (orderMode === 'asc_need') out.sort((a, b) => (Number(a.fields?.count) || 0) - (Number(b.fields?.count) || 0));
+          if (orderMode === 'random') {
+            const rr = rnd || (() => Math.random());
+            out = out.sort(() => rr() - 0.5);
+          }
+          return out;
+        }
+        function placeTileFieldsGrouped(tileFarms, blocked, occ, fields, orderMode = 'desc_need', rnd = null) {
+          if (!tileFarms.length) return 0;
+          const W = blocked.length, H = blocked[0].length;
+          const ordered = orderFarmsForMode(tileFarms, orderMode, rnd);
+          const inBounds = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+          const neigh4 = (x, y) => ([
+            { x: x + 1, y },
+            { x: x - 1, y },
+            { x, y: y + 1 },
+            { x, y: y - 1 }
+          ]);
+          const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+          const rectDistance = (rect, x, y) => {
+            if (!rect) return 0;
+            let dx = 0, dy = 0;
+            if (x < rect.x0) dx = rect.x0 - x;
+            else if (x > rect.x1) dx = x - rect.x1;
+            if (y < rect.y0) dy = rect.y0 - y;
+            else if (y > rect.y1) dy = y - rect.y1;
+            return dx + dy;
+          };
+          const inRect = (rect, x, y) => !!rect && x >= rect.x0 && x <= rect.x1 && y >= rect.y0 && y <= rect.y1;
+          const sideProbeScore = (farm, side, depth = 10) => {
+            let score = 0;
+            const xStart = farm.x, xEnd = farm.x + farm.w - 1;
+            const yStart = farm.y, yEnd = farm.y + farm.h - 1;
+            if (side === 'right') {
+              for (let dx = 0; dx < depth; dx++) for (let y = yStart - depth; y <= yEnd + depth; y++) {
+                const x = farm.x + farm.w + dx;
+                if (!inBounds(x, y)) { score -= 2; continue; }
+                const k = key(x, y);
+                score += (blocked[x][y] || occ.has(k)) ? -1.8 : 1.0;
+              }
+            } else if (side === 'left') {
+              for (let dx = 0; dx < depth; dx++) for (let y = yStart - depth; y <= yEnd + depth; y++) {
+                const x = farm.x - 1 - dx;
+                if (!inBounds(x, y)) { score -= 2; continue; }
+                const k = key(x, y);
+                score += (blocked[x][y] || occ.has(k)) ? -1.8 : 1.0;
+              }
+            } else if (side === 'bottom') {
+              for (let dy = 0; dy < depth; dy++) for (let x = xStart - depth; x <= xEnd + depth; x++) {
+                const y = farm.y + farm.h + dy;
+                if (!inBounds(x, y)) { score -= 2; continue; }
+                const k = key(x, y);
+                score += (blocked[x][y] || occ.has(k)) ? -1.8 : 1.0;
+              }
+            } else {
+              for (let dy = 0; dy < depth; dy++) for (let x = xStart - depth; x <= xEnd + depth; x++) {
+                const y = farm.y - 1 - dy;
+                if (!inBounds(x, y)) { score -= 2; continue; }
+                const k = key(x, y);
+                score += (blocked[x][y] || occ.has(k)) ? -1.8 : 1.0;
+              }
+            }
+            return score;
+          };
+          const globalSideOrder = (() => {
+            const sides = ['bottom', 'right', 'left', 'top'];
+            const totals = Object.fromEntries(sides.map(s => [s, 0]));
+            for (const farm of ordered) {
+              for (const side of sides) totals[side] += sideProbeScore(farm, side, 9);
+            }
+            return sides.slice().sort((a, b) => totals[b] - totals[a]);
+          })();
+          const buildTargetRect = (farm, need) => {
+            if (need <= 0) return null;
+            const centerX = farm.x + Math.floor((farm.w - 1) / 2);
+            const centerY = farm.y + Math.floor((farm.h - 1) / 2);
+            const baseDepth = Math.max(1, Math.round(Math.sqrt(need)));
+            const depthMax = Math.min(Math.max(W, H), baseDepth + 8);
+            const depthMin = Math.max(1, baseDepth - 8);
+            const depthCandidates = new Set([1, baseDepth, farm.w, farm.h, Math.max(2, Math.floor(baseDepth * 0.7)), Math.max(2, Math.ceil(baseDepth * 1.4))]);
+            for (let d = depthMin; d <= depthMax; d += 2) depthCandidates.add(d);
+            const candidates = [];
+            const sideRank = Object.fromEntries(globalSideOrder.map((s, i) => [s, i]));
+            const localSideOpen = {
+              right: sideProbeScore(farm, 'right', 9),
+              left: sideProbeScore(farm, 'left', 9),
+              bottom: sideProbeScore(farm, 'bottom', 9),
+              top: sideProbeScore(farm, 'top', 9)
+            };
+            const pushRect = (side, depth, span) => {
+              depth = Math.max(1, Math.floor(depth));
+              span = Math.max(1, Math.floor(span));
+              let x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+              if (side === 'right') {
+                x0 = farm.x + farm.w;
+                x1 = x0 + depth - 1;
+                y0 = centerY - Math.floor(span / 2);
+                y1 = y0 + span - 1;
+              } else if (side === 'left') {
+                x1 = farm.x - 1;
+                x0 = x1 - depth + 1;
+                y0 = centerY - Math.floor(span / 2);
+                y1 = y0 + span - 1;
+              } else if (side === 'bottom') {
+                y0 = farm.y + farm.h;
+                y1 = y0 + depth - 1;
+                x0 = centerX - Math.floor(span / 2);
+                x1 = x0 + span - 1;
+              } else {
+                y1 = farm.y - 1;
+                y0 = y1 - depth + 1;
+                x0 = centerX - Math.floor(span / 2);
+                x1 = x0 + span - 1;
+              }
+              candidates.push({ x0, y0, x1, y1, side, depth, span, area: depth * span });
+            };
+
+            for (const depthRaw of depthCandidates) {
+              const depth = clamp(depthRaw, 1, Math.max(1, need));
+              const span = Math.max(1, Math.ceil(need / depth));
+              for (const side of globalSideOrder) pushRect(side, depth, span);
+            }
+
+            let best = null;
+            let bestScore = Infinity;
+            for (const rect of candidates) {
+              let free = 0;
+              let blockedCells = 0;
+              let outside = 0;
+              let contact = 0;
+              for (let y = rect.y0; y <= rect.y1; y++) {
+                for (let x = rect.x0; x <= rect.x1; x++) {
+                  if (!inBounds(x, y)) {
+                    outside++;
+                    continue;
+                  }
+                  const k = key(x, y);
+                  if (blocked[x][y] || occ.has(k)) {
+                    blockedCells++;
+                    continue;
+                  }
+                  free++;
+                  if (x >= farm.x && x < farm.x + farm.w) {
+                    if (y === farm.y - 1 || y === farm.y + farm.h) contact++;
+                  }
+                  if (y >= farm.y && y < farm.y + farm.h) {
+                    if (x === farm.x - 1 || x === farm.x + farm.w) contact++;
+                  }
+                }
+              }
+              if (free <= 0) continue;
+              const miss = Math.max(0, need - free);
+              const over = Math.max(0, free - need);
+              const stretch = Math.abs(rect.depth - rect.span);
+              const sidePenalty = ((sideRank[rect.side] ?? 4) * 18);
+              const sideOpenBonus = localSideOpen[rect.side] || 0;
+              const score =
+                miss * 1200
+                + outside * 18
+                + blockedCells * 28
+                + over * 0.6
+                + stretch * 0.8
+                + sidePenalty
+                - contact * 10
+                - sideOpenBonus * 0.25;
+              if (score < bestScore) {
+                bestScore = score;
+                best = rect;
+              }
+            }
+            return best;
+          };
+
+          const states = ordered.map(farm => {
+            const need = Math.max(0, Math.floor(Number(farm.fields?.count) || 0));
+            const frontier = [];
+            const frontierSet = new Set();
+            const ownSet = new Set();
+            const center = { x: farm.x + Math.floor((farm.w - 1) / 2), y: farm.y + Math.floor((farm.h - 1) / 2) };
+            const targetRect = buildTargetRect(farm, need);
+            const buildAxisOrder = (a0, a1, centerPos) => {
+              const out = [];
+              const c = clamp(centerPos, a0, a1);
+              out.push(c);
+              for (let d = 1; (c - d) >= a0 || (c + d) <= a1; d++) {
+                if ((c - d) >= a0) out.push(c - d);
+                if ((c + d) <= a1) out.push(c + d);
+              }
+              return out;
+            };
+            const buildTargetCells = () => {
+              if (!targetRect) return [];
+              const out = [];
+              if (targetRect.side === 'right') {
+                const ys = buildAxisOrder(targetRect.y0, targetRect.y1, center.y);
+                for (let x = targetRect.x0; x <= targetRect.x1; x++) for (const y of ys) out.push({ x, y });
+              } else if (targetRect.side === 'left') {
+                const ys = buildAxisOrder(targetRect.y0, targetRect.y1, center.y);
+                for (let x = targetRect.x1; x >= targetRect.x0; x--) for (const y of ys) out.push({ x, y });
+              } else if (targetRect.side === 'bottom') {
+                const xs = buildAxisOrder(targetRect.x0, targetRect.x1, center.x);
+                for (let y = targetRect.y0; y <= targetRect.y1; y++) for (const x of xs) out.push({ x, y });
+              } else {
+                const xs = buildAxisOrder(targetRect.x0, targetRect.x1, center.x);
+                for (let y = targetRect.y1; y >= targetRect.y0; y--) for (const x of xs) out.push({ x, y });
+              }
+              return out.filter(c => inBounds(c.x, c.y));
+            };
+            const targetCells = buildTargetCells();
+            const pushFrontier = (x, y) => {
+              if (x < 0 || y < 0 || x >= W || y >= H) return;
+              const k = key(x, y);
+              if (frontierSet.has(k)) return;
+              if (blocked[x][y] || occ.has(k)) return;
+              frontierSet.add(k);
+              frontier.push({ x, y });
+            };
+            for (const s of farmAdjacentSeeds(farm, W, H)) pushFrontier(s.x, s.y);
+            return {
+              farm,
+              need,
+              placed: 0,
+              frontier,
+              frontierSet,
+              pushFrontier,
+              ownSet,
+              center,
+              targetRect,
+              targetCells
+            };
+          });
+
+          const edgeTouchScore = (farm, x, y) => {
+            let score = 0;
+            if (x >= farm.x && x < farm.x + farm.w) {
+              if (y === farm.y - 1) score++;
+              if (y === farm.y + farm.h) score++;
+            }
+            if (y >= farm.y && y < farm.y + farm.h) {
+              if (x === farm.x - 1) score++;
+              if (x === farm.x + farm.w) score++;
+            }
+            return score;
+          };
+
+          const ownAdjCount = (st, x, y) => {
+            let c = 0;
+            for (const n of neigh4(x, y)) if (st.ownSet.has(key(n.x, n.y))) c++;
+            return c;
+          };
+
+          const foreignAdjCount = (st, x, y) => {
+            let c = 0;
+            for (const n of neigh4(x, y)) {
+              if (!inBounds(n.x, n.y)) continue;
+              const nk = key(n.x, n.y);
+              if (!occ.has(nk)) continue;
+              if (st.ownSet.has(nk)) continue;
+              c++;
+            }
+            return c;
+          };
+
+          const pickBestFrontier = st => {
+            let bestIdx = -1;
+            let bestScore = Infinity;
+            const remain = Math.max(0, st.need - st.placed);
+            for (let i = 0; i < st.frontier.length; i++) {
+              const c = st.frontier[i];
+              const k = key(c.x, c.y);
+              if (blocked[c.x][c.y] || occ.has(k)) continue;
+              const dist = Math.abs(c.x - st.center.x) + Math.abs(c.y - st.center.y);
+              const ownAdj = ownAdjCount(st, c.x, c.y);
+              const edgeAdj = edgeTouchScore(st.farm, c.x, c.y);
+              const foreignAdj = foreignAdjCount(st, c.x, c.y);
+              const rectGap = rectDistance(st.targetRect, c.x, c.y);
+              const inTarget = inRect(st.targetRect, c.x, c.y);
+              const forceInside = remain > 4 ? 1 : 0;
+              const score =
+                rectGap * (forceInside ? 12 : 7)
+                + dist * 0.9
+                - ownAdj * 5.3
+                - edgeAdj * 2.6
+                + foreignAdj * 1.6
+                + (inTarget ? -3.8 : 0);
+              if (score < bestScore) {
+                bestScore = score;
+                bestIdx = i;
+              }
+            }
+            if (bestIdx < 0) return null;
+            const choice = st.frontier.splice(bestIdx, 1)[0];
+            st.frontierSet.delete(key(choice.x, choice.y));
+            return choice;
+          };
+
+          const touchesFarmOrOwn = (st, x, y) => {
+            const f = st.farm;
+            if (x >= f.x && x < f.x + f.w) {
+              if (y === f.y - 1 || y === f.y + f.h) return true;
+            }
+            if (y >= f.y && y < f.y + f.h) {
+              if (x === f.x - 1 || x === f.x + f.w) return true;
+            }
+            for (const n of neigh4(x, y)) if (st.ownSet.has(key(n.x, n.y))) return true;
+            return false;
+          };
+
+          const pickTargetCell = st => {
+            for (let i = 0; i < st.targetCells.length; i++) {
+              const c = st.targetCells[i];
+              const k = key(c.x, c.y);
+              if (blocked[c.x][c.y] || occ.has(k)) {
+                st.targetCells.splice(i, 1);
+                i--;
+                continue;
+              }
+              if (!touchesFarmOrOwn(st, c.x, c.y)) continue;
+              st.targetCells.splice(i, 1);
+              return c;
+            }
+            return null;
+          };
+
+          const placeCell = (st, cur) => {
+            const k = key(cur.x, cur.y);
+            if (blocked[cur.x][cur.y] || occ.has(k)) return false;
+            if (!touchesFarmOrOwn(st, cur.x, cur.y)) return false;
+            occ.add(k);
+            st.ownSet.add(k);
+            fields.push({
+              id: st.farm.fields.id,
+              kind: 'field',
+              name: st.farm.fields.name,
+              x: cur.x,
+              y: cur.y,
+              w: 1,
+              h: 1,
+              color: st.farm.fields.color || '#8a8',
+              farmUid: st.farm.uid
+            });
+            st.placed++;
+            st.pushFrontier(cur.x + 1, cur.y);
+            st.pushFrontier(cur.x - 1, cur.y);
+            st.pushFrontier(cur.x, cur.y + 1);
+            st.pushFrontier(cur.x, cur.y - 1);
+            return true;
+          };
+
+          let progressed = true;
+          while (progressed) {
+            progressed = false;
+            const cycle = states.slice().sort((a, b) => (b.need - b.placed) - (a.need - a.placed));
+            for (const st of cycle) {
+              if (st.placed >= st.need) continue;
+              const targetCur = pickTargetCell(st);
+              if (targetCur && placeCell(st, targetCur)) {
+                progressed = true;
+                continue;
+              }
+              while (st.frontier.length) {
+                const cur = pickBestFrontier(st);
+                if (!cur) break;
+                if (placeCell(st, cur)) {
+                  progressed = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          let missing = 0;
+          for (const st of states) missing += Math.max(0, st.need - st.placed);
+          return missing;
+        }
+        function addFields(buildings, blocked, roads, orderMode = 'desc_need', rnd = null) {
+          const occ = new Set(roads.map(r => key(r.x, r.y)));
+          const fields = [];
+          let missing = 0;
+          const farms = orderFarmsForMode(buildings.filter(x => x.fields && Number(x.fields.count) > 0), orderMode, rnd);
+          const rectFarms = farms
+            .filter(b => (b.fields.unitW || 1) > 1 || (b.fields.unitH || 1) > 1)
+            .sort((a, b) => {
+              const ap = String(a.id || '').includes('schweinehof') ? 1 : 0;
+              const bp = String(b.id || '').includes('schweinehof') ? 1 : 0;
+              return bp - ap || (Number(b.fields?.count) || 0) - (Number(a.fields?.count) || 0);
+            });
+          const tileFarms = farms.filter(b => (b.fields.unitW || 1) === 1 && (b.fields.unitH || 1) === 1);
+
+          for (const b of rectFarms) {
+            const spec = b.fields;
+            missing += placeRectFields(b, spec, blocked, occ, fields);
+          }
+          missing += placeTileFieldsGrouped(tileFarms, blocked, occ, fields, orderMode, rnd);
+          return { fields, missing };
+        }
+        function fillPads(items) {
+          const bb = boundingBox(items);
+          if (!bb) return [];
+          const used = new Set();
+          for (const it of items) for (let y = it.y; y < it.y + it.h; y++) for (let x = it.x; x < it.x + it.w; x++) used.add(key(x, y));
+          const pads = [];
+          for (let y = bb.minY; y < bb.maxY; y++) {
+            for (let x = bb.minX; x < bb.maxX; x++) {
+              const k = key(x, y);
+              if (used.has(k)) continue;
+              pads.push({ id: 'infra_platz', kind: 'pad', name: 'Platz', x, y, w: 1, h: 1, color: '#202527' });
+            }
+          }
+          return pads;
+        }
+        function compactShift(items) {
+          const bb = boundingBox(items);
+          if (!bb) return items;
+          return items.map(it => ({ ...it, x: it.x - bb.minX, y: it.y - bb.minY }));
+        }
+        function scoreSolution(items, missing, pads) {
+          const bb = boundingBox(items);
+          if (!bb) return { score: 9e9, roads: 0 };
+          const roads = items.filter(x => x.kind === 'road').length;
+          const unused = Math.max(0, pads | 0);
+          const buildings = items.filter(x => x.kind === 'building');
+          const fields = items.filter(x => x.kind === 'field');
+          const warehouse = buildings.find(b => b.id === 'infra_lagerhaus') || buildings[0] || null;
+          const pigs = buildings.filter(b => (b.id && b.id.includes('schweinehof')) || (b.fields && b.fields.id === 'field_pigstall'));
+          const processors = buildings.filter(b => {
+            const id = String(b.id || '').toLowerCase();
+            return id.includes('gerberei') || id.includes('sandalenmacher') || id.includes('schmelz') || id.includes('renderer');
+          });
+
+          const manhattanRectDist = (a, b) => {
+            const ax0 = a.x, ay0 = a.y, ax1 = a.x + a.w - 1, ay1 = a.y + a.h - 1;
+            const bx0 = b.x, by0 = b.y, bx1 = b.x + b.w - 1, by1 = b.y + b.h - 1;
+            const dx = ax1 < bx0 ? (bx0 - ax1) : (bx1 < ax0 ? (ax0 - bx1) : 0);
+            const dy = ay1 < by0 ? (by0 - ay1) : (by1 < ay0 ? (ay0 - by1) : 0);
+            return dx + dy;
+          };
+
+          const fieldAreaByFarm = new Map();
+          for (const f of fields) {
+            const k = String(f.farmUid || '');
+            fieldAreaByFarm.set(k, (fieldAreaByFarm.get(k) || 0) + (f.w * f.h));
+          }
+
+          let pigFull = 0;
+          let pigUnder = 0;
+          let pigNoWarehouseReach = 0;
+          let pigDistancePenalty = 0;
+          let processNearBonus = 0;
+          let processFarPenalty = 0;
+          let repeatableModule = 0;
+
+          for (const pig of pigs) {
+            const unitArea = Math.max(1, (pig.fields?.unitW || 1) * (pig.fields?.unitH || 1));
+            const needArea = Math.max(0, Math.floor(Number(pig.fields?.count) || 0)) * unitArea;
+            const ownArea = fieldAreaByFarm.get(String(pig.uid)) || 0;
+            if (ownArea + 1e-6 >= needArea) pigFull++;
+            else pigUnder++;
+
+            if (!warehouse) pigNoWarehouseReach++;
+            else pigDistancePenalty += manhattanRectDist(pig, warehouse);
+
+            let nearestProc = Infinity;
+            for (const p of processors) nearestProc = Math.min(nearestProc, manhattanRectDist(pig, p));
+            if (Number.isFinite(nearestProc)) {
+              if (nearestProc <= 4) processNearBonus++;
+              if (nearestProc >= 10) processFarPenalty++;
+            }
+          }
+
+          const pigsSorted = pigs.slice().sort((a, b) => a.y - b.y || a.x - b.x);
+          for (let i = 1; i < pigsSorted.length; i++) {
+            const p0 = pigsSorted[i - 1];
+            const p1 = pigsSorted[i];
+            const rowAligned = Math.abs(p0.y - p1.y) <= 1;
+            const gap = Math.abs((p1.x + p1.w) - p0.x);
+            if (rowAligned && gap <= 8) repeatableModule++;
+          }
+
+          const padCells = new Set(items.filter(it => it.kind === 'pad').map(it => key(it.x, it.y)));
+          const seenPads = new Set();
+          let hardPocketPenalty = 0;
+          for (const pk of padCells) {
+            if (seenPads.has(pk)) continue;
+            const q = [pk];
+            seenPads.add(pk);
+            let size = 0;
+            while (q.length) {
+              const cur = q.shift();
+              size++;
+              const parts = cur.split(',');
+              const x = Number(parts[0]), y = Number(parts[1]);
+              const neigh = [key(x + 1, y), key(x - 1, y), key(x, y + 1), key(x, y - 1)];
+              for (const nk of neigh) {
+                if (!padCells.has(nk) || seenPads.has(nk)) continue;
+                seenPads.add(nk);
+                q.push(nk);
+              }
+            }
+            if (size <= 6) hardPocketPenalty++;
+          }
+
+          const aspect = Math.max(bb.w / Math.max(1, bb.h), bb.h / Math.max(1, bb.w));
+          const aspectPenalty = Math.max(0, aspect - 1.45) * 50;
+
+          let score = 0;
+          score -= pigFull * 100;
+          score += pigUnder * 50;
+          score += unused * 5;
+          score += roads * 2;
+          score += pigNoWarehouseReach * 20;
+          score += hardPocketPenalty * 10;
+          score -= Math.min(4, repeatableModule) * 10;
+          score -= processNearBonus * 10;
+          score += processFarPenalty * 10;
+          score += pigDistancePenalty * 0.35;
+          score += missing * 1200;
+          score += bb.area * 0.28;
+          score += aspectPenalty;
+          return { score, roads };
+        }
+        function solveOne(instances, w, h, seed, strategy) {
+          const rnd = rng(seed);
+          const buildings = packWithStrategy(instances, w, h, rnd, strategy);
+          if (!buildings) return null;
+          const compositions = [
+            { mode: 'roads_first', farmOrder: 'desc_need' },
+            { mode: 'roads_first', farmOrder: 'asc_need' },
+            { mode: 'roads_first', farmOrder: 'random' },
+            { mode: 'fields_first', farmOrder: 'desc_need' },
+            { mode: 'fields_first', farmOrder: 'asc_need' },
+            { mode: 'fields_first', farmOrder: 'random' }
+          ];
+
+          let best = null;
+          for (const comp of compositions) {
+            let roads = [];
+            let fieldRes = null;
+
+            if (comp.mode === 'roads_first') {
+              const blocked = makeBlocked(w, h, buildings);
+              roads = addRoadNetwork(buildings, blocked, w, h, null);
+              const blocked2 = makeBlocked(w, h, buildings);
+              for (const r of roads) blocked2[r.x][r.y] = true;
+              fieldRes = addFields(buildings, blocked2, roads, comp.farmOrder, rnd);
+            } else {
+              const blocked = makeBlocked(w, h, buildings);
+              fieldRes = addFields(buildings, blocked, [], comp.farmOrder, rnd);
+              const forbidden = new Set();
+              for (const f of fieldRes.fields) {
+                for (let yy = f.y; yy < f.y + f.h; yy++) {
+                  for (let xx = f.x; xx < f.x + f.w; xx++) forbidden.add(key(xx, yy));
+                }
+              }
+              roads = addRoadNetwork(buildings, blocked, w, h, forbidden);
+            }
+
+            if (!fieldRes || fieldRes.missing > 0) continue;
+            if (!validateFarmFieldConnectivity(buildings, fieldRes.fields)) continue;
+            if (!validateRoadConnectivity(buildings, roads)) continue;
+
+            const core = [...buildings, ...roads, ...fieldRes.fields];
+            const pads = fillPads(core);
+            const all = compactShift([...core, ...pads]);
+            const score = scoreSolution(all, fieldRes.missing, pads.length);
+            const candidate = {
+              items: all,
+              bbox: boundingBox(all),
+              score: score.score,
+              roads: score.roads,
+              missingFields: fieldRes.missing,
+              pads: pads.length,
+              buildings: buildings.length,
+              fields: fieldRes.fields.reduce((s, f) => s + f.w * f.h, 0),
+              tag: strategy + ' ' + comp.mode + ' ' + comp.farmOrder
+            };
+            if (!best || candidate.score < best.score) best = candidate;
+          }
+
+          return best;
+        }
+        function layoutKey(sol) {
+          const core = sol.items.filter(it => it.kind === 'building').map(it => it.id + ':' + it.x + ',' + it.y + ',' + it.w + ',' + it.h).sort().join('|');
+          return sol.bbox.w + 'x' + sol.bbox.h + '|' + core;
+        }
+        function buildCandidates(instances, maxW, maxH) {
+          const areaBuildings = instances.reduce((s, b) => s + b.w * b.h, 0);
+          const areaFields = instances.reduce((s, b) => s + (b.fields ? (b.fields.count * (b.fields.unitW || 1) * (b.fields.unitH || 1)) : 0), 0);
+          const baseArea = areaBuildings + areaFields;
+          const ideal = Math.max(10, Math.ceil(Math.sqrt(baseArea)));
+          const out = [];
+          for (let d = -18; d <= 46; d++) {
+            const w = Math.max(12, Math.min(maxW, ideal + d));
+            const h = Math.max(12, Math.min(maxH, Math.ceil(baseArea / w) + 12));
+            out.push({ w, h, rank: Math.abs(w - ideal) + Math.abs(h - ideal) * 0.5 });
+          }
+          for (let w = 12; w <= maxW; w += 4) {
+            const h = Math.max(12, Math.min(maxH, Math.ceil(baseArea / w) + 14));
+            out.push({ w, h, rank: Math.abs(w - ideal) * 0.8 + Math.abs(h - ideal) });
+          }
+          for (let h = 12; h <= maxH; h += 4) {
+            const w = Math.max(12, Math.min(maxW, Math.ceil(baseArea / h) + 14));
+            out.push({ w, h, rank: Math.abs(h - ideal) * 0.8 + Math.abs(w - ideal) });
+          }
+          out.push({ w: maxW, h: Math.min(maxH, Math.max(12, Math.ceil(baseArea / Math.max(1, maxW)) + 16)), rank: 999 });
+          out.push({ w: Math.min(maxW, Math.max(12, Math.ceil(baseArea / Math.max(1, maxH)) + 16)), h: maxH, rank: 999 });
+          out.sort((a, b) => a.rank - b.rank || (a.w * a.h) - (b.w * b.h));
+          const unique = [];
+          const seen = new Set();
+          for (const c of out) {
+            const k = c.w + 'x' + c.h;
+            if (seen.has(k)) continue;
+            seen.add(k);
+            unique.push(c);
+            if (unique.length >= 64) break;
+          }
+          return unique;
+        }
+        function solve(payload) {
+          cancelled = false;
+          const { counts, catalog, gridW, gridH, strategyWeights: inputWeights, seedSalt = 0 } = payload;
+          const instances = buildInstances(counts, catalog);
+          if (!instances.length) { postMessage({ type: 'done', solutions: [] }); return; }
+          const strategyWeights = sanitizeStrategyWeights(inputWeights || {});
+          const strategyStats = Object.fromEntries(STRATEGY_NAMES.map(name => [name, { attempts: 0, hits: 0, bestPads: null, avgPads: null }]));
+          const candidates = buildCandidates(instances, gridW, gridH);
+          const tileFarmCount = instances.filter(b => b.fields && (b.fields.unitW || 1) === 1 && (b.fields.unitH || 1) === 1).length;
+          const rectFarmCount = instances.filter(b => b.fields && ((b.fields.unitW || 1) > 1 || (b.fields.unitH || 1) > 1)).length;
+          const pigFarmCount = instances.filter(b => String(b.id || '').includes('schweinehof')).length;
+          const fieldLoad = instances.reduce((s, b) => s + (b.fields ? Math.max(0, Math.floor(Number(b.fields.count) || 0)) : 0), 0);
+          const attemptsPerCandidate = Math.max(10, Math.min(28, 10 + Math.floor(tileFarmCount / 2) + Math.floor(rectFarmCount / 2) + pigFarmCount + Math.floor(fieldLoad / 180)));
+          const maxAttempts = candidates.length * attemptsPerCandidate;
+          let tries = 0;
+          const solutions = [];
+          const keys = new Set();
+
+          for (const cand of candidates) {
+            if (cancelled) break;
+            for (let i = 0; i < attemptsPerCandidate; i++) {
+              if (cancelled) break;
+              const salt = (Number(seedSalt) || 0) >>> 0;
+              const seed = ((cand.w * 73856093) ^ (cand.h * 19349663) ^ ((i + 1) * 83492791) ^ ((salt + 1) * 2654435761)) >>> 0;
+              const pickRnd = rng((seed ^ 0x9e3779b9) >>> 0);
+              const strategy = weightedPickStrategy(strategyWeights, pickRnd);
+              strategyStats[strategy].attempts++;
+              const sol = solveOne(instances, cand.w, cand.h, seed >>> 0, strategy);
+              tries++;
+              if (sol) {
+                const st = strategyStats[strategy];
+                st.hits++;
+                st.bestPads = st.bestPads == null ? sol.pads : Math.min(st.bestPads, sol.pads);
+                st.avgPads = st.avgPads == null ? sol.pads : (st.avgPads * 0.85 + sol.pads * 0.15);
+
+                // Adaptive learning: fewer unused cells => stronger weight.
+                const quality = 1 / (1 + (sol.pads || 0) + (sol.missingFields || 0) * 80);
+                strategyWeights[strategy] = clamp((strategyWeights[strategy] * 0.94) + (quality * 18), 0.15, 8);
+
+                const k = layoutKey(sol);
+                if (!keys.has(k)) {
+                  keys.add(k);
+                  solutions.push(sol);
+                  solutions.sort((a, b) => a.score - b.score);
+                  if (solutions.length > 12) solutions.splice(12);
+                }
+              } else {
+                strategyWeights[strategy] = clamp((strategyWeights[strategy] * 0.995), 0.15, 8);
+              }
+              if (tries % 2 === 0 || tries === maxAttempts) {
+                const best = solutions[0] || null;
+                const topStrategy = STRATEGY_NAMES.slice().sort((a, b) => strategyWeights[b] - strategyWeights[a])[0];
+                postMessage({
+                  type: 'progress',
+                  progress: Math.round((tries / Math.max(1, maxAttempts)) * 100),
+                  tries,
+                  maxAttempts,
+                  best: best ? { score: best.score, bbox: best.bbox, missingFields: best.missingFields, pads: best.pads } : null,
+                  topStrategy
+                });
+              }
+            }
+          }
+          if (!cancelled && !solutions.length) {
+            const emergency = [];
+            const areaBuildings = instances.reduce((s, b) => s + b.w * b.h, 0);
+            const areaFields = instances.reduce((s, b) => s + (b.fields ? (b.fields.count * (b.fields.unitW || 1) * (b.fields.unitH || 1)) : 0), 0);
+            const baseArea = areaBuildings + areaFields;
+            for (let w = Math.max(20, Math.floor(Math.sqrt(baseArea) * 0.7)); w <= gridW; w += 5) {
+              const h = Math.min(gridH, Math.max(20, Math.ceil(baseArea / Math.max(1, w)) + 18));
+              emergency.push({ w, h });
+            }
+            for (const cand of emergency.slice(0, 18)) {
+              if (cancelled) break;
+              for (const sName of ['row_processing_gap1', 'row_area_gap1', 'col_area_gap0', 'row_height_gap0']) {
+                if (cancelled) break;
+                for (let r = 0; r < 4; r++) {
+                  const seed = ((cand.w * 92821) ^ (cand.h * 68917) ^ ((r + 1) * 124567) ^ (sName.length * 911)) >>> 0;
+                  const sol = solveOne(instances, cand.w, cand.h, seed, sName);
+                  if (!sol) continue;
+                  const k = layoutKey(sol);
+                  if (!keys.has(k)) {
+                    keys.add(k);
+                    solutions.push(sol);
+                    solutions.sort((a, b) => a.score - b.score);
+                    if (solutions.length > 12) solutions.splice(12);
+                  }
+                }
+              }
+            }
+          }
+          solutions.sort((a, b) => a.score - b.score);
+          postMessage({ type: 'done', solutions, strategyWeights, strategyStats });
+        }
+        onmessage = ev => {
+          const msg = ev.data || {};
+          if (msg.type === 'cancel') { cancelled = true; return; }
+          if (msg.type === 'optimize') solve(msg.payload || {});
+        };
+      `;
+      const blob = new Blob([workerSource], { type: 'text/javascript' });
+      worker = new Worker(URL.createObjectURL(blob));
+      worker.onmessage = handleWorkerMessage;
+      return worker;
+    }
+
+    function handleWorkerMessage(ev) {
+      const msg = ev.data || {};
+      if (msg.type === 'progress') {
+        if (trainingState) {
+          const cycle = trainingState.done + 1;
+          const bestText = msg.best
+            ? `Lauf ${cycle}/${trainingState.totalRuns} | Beste aktuell ${msg.best.bbox.w}x${msg.best.bbox.h}, Unbenutzt ${msg.best.pads || 0}`
+            : `Lauf ${cycle}/${trainingState.totalRuns} | Noch kein Treffer`;
+          const stratText = msg.topStrategy ? ` | Strategie: ${msg.topStrategy}` : '';
+          const pctBase = trainingState.done / Math.max(1, trainingState.totalRuns);
+          const pctRun = (msg.progress || 0) / 100 / Math.max(1, trainingState.totalRuns);
+          setStatus(`Training laeuft...`, `${bestText}${stratText}`, (pctBase + pctRun) * 100);
+          return;
+        }
+        const bestText = msg.best
+          ? `Beste: ${msg.best.bbox.w}x${msg.best.bbox.h}, MissingFields ${msg.best.missingFields}, Unbenutzt ${msg.best.pads || 0}`
+          : 'Noch kein Treffer';
+        const stratText = msg.topStrategy ? ` | Strategie: ${msg.topStrategy}` : '';
+        setStatus(`Suche laeuft... ${msg.tries}/${msg.maxAttempts}`, `${bestText}${stratText}`, msg.progress || 0);
+      }
+      if (msg.type === 'done') {
+        if (msg.strategyWeights && typeof msg.strategyWeights === 'object') {
+          strategyWeights = { ...msg.strategyWeights };
+          saveStrategyWeights(strategyWeights);
+        }
+
+        if (trainingState) {
+          const cycleSolutions = Array.isArray(msg.solutions) ? msg.solutions : [];
+          for (const sol of cycleSolutions) {
+            const key = solutionLayoutKey(sol);
+            if (!key || trainingState.solutionKeys.has(key)) continue;
+            trainingState.solutionKeys.add(key);
+            trainingState.solutions.push(sol);
+          }
+          trainingState.solutions.sort((a, b) => a.score - b.score);
+          if (trainingState.solutions.length > 18) trainingState.solutions.splice(18);
+
+          trainingState.done++;
+          if (cancelRequested) trainingState.cancelled = true;
+
+          if (trainingState.cancelled || trainingState.done >= trainingState.totalRuns) {
+            running = false;
+            cancelRequested = false;
+            const finished = trainingState.done;
+            const total = trainingState.totalRuns;
+            const best = trainingState.solutions[0] || null;
+            activeSolutions = trainingState.solutions.slice(0, 12);
+            activeIndex = best ? 0 : -1;
+            renderSolutions();
+            drawSolution(best);
+            setRunUi(false);
+            if (best) {
+              const stopText = trainingState.cancelled ? 'Training gestoppt' : 'Training fertig';
+              setStatus(
+                `${stopText}: ${finished}/${total} Laeufe.`,
+                `Beste ${best.bbox.w}x${best.bbox.h} | MissingFields ${best.missingFields} | Unbenutzt ${best.pads || 0}`,
+                100
+              );
+            } else {
+              setStatus(`Training beendet: ${finished}/${total} Laeufe.`, 'Keine Loesung gefunden.', 0);
+            }
+            trainingState = null;
+            return;
+          }
+
+          const nextSalt = ((trainingState.done + 1) * 104729) ^ (Date.now() & 0xffff);
+          postOptimizeRun(nextSalt >>> 0);
+          return;
+        }
+
+        running = false;
+        setRunUi(false);
+        activeSolutions = Array.isArray(msg.solutions) ? msg.solutions : [];
+        if (!activeSolutions.length) {
+          setStatus('Keine Loesung gefunden.', 'Versuche andere Mengen oder kleinere Last.', 0);
+          renderSolutions();
+          drawSolution(null);
+          return;
+        }
+        const best = activeSolutions[0];
+        const stats = msg.strategyStats || {};
+        const top = Object.keys(stats)
+          .filter(k => Number(stats[k]?.hits) > 0)
+          .sort((a, b) => (Number(msg.strategyWeights?.[b]) || 0) - (Number(msg.strategyWeights?.[a]) || 0))[0];
+        const topText = top ? ` | Top-Strategie ${top}` : '';
+        setStatus(
+          `Fertig: ${activeSolutions.length} Loesungen.`,
+          `Beste ${best.bbox.w}x${best.bbox.h} | MissingFields ${best.missingFields} | Unbenutzt ${best.pads || 0}${topText}`,
+          100
+        );
+        activeIndex = 0;
+        renderSolutions();
+        drawSolution(best);
+      }
+    }
+
+    function postOptimizeRun(seedSalt = 0) {
+      const w = ensureWorker();
+      w.postMessage({
+        type: 'optimize',
+        payload: {
+          counts,
+          catalog: CATALOG,
+          gridW: GRID_W,
+          gridH: GRID_H,
+          strategyWeights,
+          seedSalt
+        }
+      });
+    }
+
+    function startTraining() {
+      if (running) return;
+      if (totalSelected() === 0) {
+        setStatus('Bitte mindestens ein Gebaeude waehlen.', 'Links die Mengen mit + setzen.', 0);
+        return;
+      }
+      const raw = window.prompt('Wie viele Trainingslaeufe?', String(TRAIN_DEFAULT_RUNS));
+      if (raw == null) return;
+      const runs = Math.max(1, Math.min(TRAIN_MAX_RUNS, Math.floor(Number(raw) || 0)));
+      if (!Number.isFinite(runs) || runs <= 0) return;
+
+      running = true;
+      cancelRequested = false;
+      trainingState = {
+        totalRuns: runs,
+        done: 0,
+        cancelled: false,
+        solutions: [],
+        solutionKeys: new Set()
+      };
+      activeSolutions = [];
+      activeIndex = -1;
+      renderSolutions();
+      drawSolution(null);
+      setRunUi(true);
+      setStatus('Training startet...', `0/${runs} Laeufe`, 0);
+      const seedSalt = (Date.now() ^ 0x9e3779b9) >>> 0;
+      postOptimizeRun(seedSalt);
+    }
+
+    function drawSolution(sol) {
+      const ctx = mapCanvas.getContext('2d');
+      ctx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+      if (!sol || !sol.bbox || !Array.isArray(sol.items)) return;
+      const scale = CELL;
+      const offX = 0;
+      const offY = 0;
+
+      const roundRectPath = (x, y, w, h, r = 3) => {
+        const rr = Math.max(0, Math.min(r, Math.floor(Math.min(w, h) / 2)));
+        ctx.beginPath();
+        ctx.moveTo(x + rr, y);
+        ctx.lineTo(x + w - rr, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+        ctx.lineTo(x + w, y + h - rr);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+        ctx.lineTo(x + rr, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+        ctx.lineTo(x, y + rr);
+        ctx.quadraticCurveTo(x, y, x + rr, y);
+        ctx.closePath();
+      };
+
+      const drawStyledTile = (it, label = false) => {
+        const x = offX + it.x * scale;
+        const y = offY + it.y * scale;
+        const w = Math.max(1, it.w * scale);
+        const h = Math.max(1, it.h * scale);
+        const base = it.kind === 'road' ? '#665539' : (it.kind === 'pad' ? '#202527' : (it.color || '#777'));
+
+        ctx.save();
+        if (it.kind === 'field') ctx.globalAlpha = 0.82;
+        roundRectPath(x, y, w, h, 3);
+        ctx.fillStyle = base;
+        ctx.fill();
+
+        ctx.strokeStyle = it.kind === 'road'
+          ? 'rgba(255,255,255,.05)'
+          : (it.kind === 'field' ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.16)');
+        ctx.lineWidth = 1;
+        roundRectPath(x + 0.5, y + 0.5, Math.max(0, w - 1), Math.max(0, h - 1), 3);
+        ctx.stroke();
+
+        // old-style inset light/shadow
+        const grad = ctx.createLinearGradient(0, y, 0, y + h);
+        grad.addColorStop(0, 'rgba(255,255,255,.12)');
+        grad.addColorStop(1, 'rgba(0,0,0,.12)');
+        roundRectPath(x, y, w, h, 3);
+        ctx.clip();
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, y, w, h);
+        ctx.restore();
+
+        if (!label) return;
+        if (w < 34 || h < 18) return;
+        const text = (it.name || '').slice(0, 18);
+        if (!text) return;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,.26)';
+        ctx.fillRect(x + 1, y + h - 13, Math.max(1, w - 2), 12);
+        ctx.fillStyle = '#fff7e8';
+        ctx.font = `10px Segoe UI`;
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 2;
+        ctx.shadowOffsetY = 1;
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, x + 3, y + h - 6.5, Math.max(4, w - 6));
+        ctx.restore();
+      };
+
+      const order = { pad: 0, field: 1, road: 2, building: 3 };
+      const sorted = sol.items.slice().sort((a, b) => (order[a.kind] || 0) - (order[b.kind] || 0));
+      for (const it of sorted) drawStyledTile(it, it.kind === 'building');
+    }
+    function drawMini(sol, canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#151413';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (!sol || !sol.bbox) return;
+      const scale = Math.max(1, Math.floor(Math.min((canvas.width - 8) / sol.bbox.w, (canvas.height - 8) / sol.bbox.h)));
+      const offX = Math.floor((canvas.width - (sol.bbox.w * scale)) / 2);
+      const offY = Math.floor((canvas.height - (sol.bbox.h * scale)) / 2);
+      const order = { pad: 0, field: 1, road: 2, building: 3 };
+      const sorted = sol.items.slice().sort((a, b) => (order[a.kind] || 0) - (order[b.kind] || 0));
+      for (const it of sorted) {
+        ctx.fillStyle = it.color || '#777';
+        ctx.fillRect(
+          offX + it.x * scale,
+          offY + it.y * scale,
+          Math.max(1, it.w * scale),
+          Math.max(1, it.h * scale)
+        );
+      }
+    }
+
+    function renderSolutions() {
+      solutionListEl.innerHTML = '';
+      solutionsSubEl.textContent = `${activeSolutions.length} Kandidaten`;
+      activeSolutions.forEach((sol, idx) => {
+        const card = document.createElement('div');
+        card.className = `sol ${idx === activeIndex ? 'active' : ''}`;
+        const mini = document.createElement('canvas');
+        mini.width = 90;
+        mini.height = 90;
+        mini.className = 'sol-canvas';
+        drawMini(sol, mini);
+        const info = document.createElement('div');
+        info.innerHTML = `<div class="sol-title">#${idx + 1} ${sol.bbox.w}x${sol.bbox.h}</div><div class="sol-meta">Score ${Math.round(sol.score)}<br>Gebaeude ${sol.buildings} | Felder ${sol.fields} | Strassen ${sol.roads}<br>MissingFields ${sol.missingFields} | Unbenutzt ${sol.pads || 0}</div>`;
+        card.appendChild(mini);
+        card.appendChild(info);
+        card.addEventListener('click', () => {
+          activeIndex = idx;
+          renderSolutions();
+          drawSolution(sol);
+        });
+        solutionListEl.appendChild(card);
+      });
+    }
+
+    function startOptimize() {
+      if (running) return;
+      if (totalSelected() === 0) {
+        setStatus('Bitte mindestens ein Gebaeude waehlen.', 'Links die Mengen mit + setzen.', 0);
+        return;
+      }
+      running = true;
+      cancelRequested = false;
+      trainingState = null;
+      activeSolutions = [];
+      activeIndex = -1;
+      renderSolutions();
+      drawSolution(null);
+      setStatus('Starte frische Optimierung...', 'Worker wird initialisiert.', 2);
+      setRunUi(true);
+      postOptimizeRun((Date.now() & 0xffff) >>> 0);
+    }
+
+    function cancelOptimize() {
+      if (!running || !worker) return;
+      cancelRequested = true;
+      if (trainingState) trainingState.cancelled = true;
+      worker.postMessage({ type: 'cancel' });
+      setStatus('Abbruch angefordert...', 'Aktueller Lauf wird sauber gestoppt.', Number(progressBarEl.style.width.replace('%', '')) || 0);
+    }
+
+    document.getElementById('optimizeBtn').addEventListener('click', startOptimize);
+    document.getElementById('trainBtn').addEventListener('click', startTraining);
+    document.getElementById('cancelBtn').addEventListener('click', cancelOptimize);
+    document.getElementById('resetCountsBtn').addEventListener('click', () => {
+      counts = Object.fromEntries(CATALOG.map(c => [c.id, 0]));
+      saveCounts();
+      buildCatalog();
+      setStatus('Mengen zurueckgesetzt.', '', 0);
+    });
+    document.getElementById('clearSolutionsBtn').addEventListener('click', () => {
+      activeSolutions = [];
+      activeIndex = -1;
+      renderSolutions();
+      drawSolution(null);
+      setStatus('Trefferliste geleert.', '', 0);
+    });
+
+    buildCatalog();
+    renderSolutions();
+    drawSolution(null);
+    setStatus('Bereit.', 'Frischer Solver mit Worker-Engine.', 0);
+  </script>
+</body>
+</html>
