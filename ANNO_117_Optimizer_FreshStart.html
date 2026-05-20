@@ -1654,33 +1654,26 @@
           score += aspectPenalty;
           return { score, roads };
         }
-        function solveOne(instances, w, h, seed, strategy) {
-          const rnd = rng(seed);
-          const buildings = packWithStrategy(instances, w, h, rnd, strategy);
-          if (!buildings) return null;
+        function evaluatePlacement(buildings, w, h, label) {
           const compositions = [
             { mode: 'roads_first', farmOrder: 'desc_need' },
             { mode: 'roads_first', farmOrder: 'asc_need' },
-            { mode: 'roads_first', farmOrder: 'random' },
             { mode: 'fields_first', farmOrder: 'desc_need' },
-            { mode: 'fields_first', farmOrder: 'asc_need' },
-            { mode: 'fields_first', farmOrder: 'random' }
+            { mode: 'fields_first', farmOrder: 'asc_need' }
           ];
-
           let best = null;
           for (const comp of compositions) {
             let roads = [];
             let fieldRes = null;
-
             if (comp.mode === 'roads_first') {
               const blocked = makeBlocked(w, h, buildings);
               roads = addRoadNetwork(buildings, blocked, w, h, null);
               const blocked2 = makeBlocked(w, h, buildings);
               for (const r of roads) blocked2[r.x][r.y] = true;
-              fieldRes = addFields(buildings, blocked2, roads, comp.farmOrder, rnd);
+              fieldRes = addFields(buildings, blocked2, roads, comp.farmOrder, null);
             } else {
               const blocked = makeBlocked(w, h, buildings);
-              fieldRes = addFields(buildings, blocked, [], comp.farmOrder, rnd);
+              fieldRes = addFields(buildings, blocked, [], comp.farmOrder, null);
               const forbidden = new Set();
               for (const f of fieldRes.fields) {
                 for (let yy = f.y; yy < f.y + f.h; yy++) {
@@ -1689,14 +1682,12 @@
               }
               roads = addRoadNetwork(buildings, blocked, w, h, forbidden);
             }
-
             if (!fieldRes || fieldRes.missing > 0) continue;
             if (!validateFarmFieldConnectivity(buildings, fieldRes.fields)) continue;
             if (!validateRoadConnectivity(buildings, roads)) continue;
-
-            const core = [...buildings, ...roads, ...fieldRes.fields];
+            const core = buildings.concat(roads, fieldRes.fields);
             const pads = fillPads(core);
-            const all = compactShift([...core, ...pads]);
+            const all = compactShift(core.concat(pads));
             const score = scoreSolution(all, fieldRes.missing, pads.length);
             const candidate = {
               items: all,
@@ -1707,12 +1698,250 @@
               pads: pads.length,
               buildings: buildings.length,
               fields: fieldRes.fields.reduce((s, f) => s + f.w * f.h, 0),
-              tag: strategy + ' ' + comp.mode + ' ' + comp.farmOrder
+              tag: label + ' ' + comp.mode + ' ' + comp.farmOrder
             };
             if (!best || candidate.score < best.score) best = candidate;
           }
-
           return best;
+        }
+        function genomeFromBuildings(instances, placed, rnd) {
+          const baseMap = new Map(instances.map(x => [x.uid, x]));
+          const order = placed.slice().sort((a, b) => a.y - b.y || a.x - b.x);
+          const out = [];
+          for (let i = 0; i < order.length; i++) {
+            const p = order[i];
+            const base = baseMap.get(p.uid);
+            if (!base) continue;
+            let rot = 0;
+            if (base.w !== base.h) rot = (p.w === base.h && p.h === base.w) ? 1 : 0;
+            out.push({ uid: p.uid, x: p.x, y: p.y, rot, order: i + (rnd ? rnd() * 0.01 : 0) });
+          }
+          return out;
+        }
+        function normalizeGenome(genome) {
+          const copy = genome.map(g => ({ ...g }));
+          copy.sort((a, b) => a.order - b.order || a.uid.localeCompare(b.uid));
+          for (let i = 0; i < copy.length; i++) copy[i].order = i;
+          return copy;
+        }
+        function cloneGenome(genome) {
+          return genome.map(g => ({ uid: g.uid, x: g.x, y: g.y, rot: g.rot, order: g.order }));
+        }
+        function randomGenome(instances, w, h, rnd) {
+          const shuffled = instances.slice().sort(() => rnd() - 0.5);
+          const genes = [];
+          for (let i = 0; i < shuffled.length; i++) {
+            const b = shuffled[i];
+            const canRotate = b.w !== b.h && b.id !== 'infra_lagerhaus';
+            const rot = canRotate && rnd() < 0.5 ? 1 : 0;
+            const bw = rot ? b.h : b.w;
+            const bh = rot ? b.w : b.h;
+            const x = Math.floor(rnd() * Math.max(1, w - bw));
+            const y = Math.floor(rnd() * Math.max(1, h - bh));
+            genes.push({ uid: b.uid, x, y, rot, order: i });
+          }
+          return genes;
+        }
+        function buildPlacedFromGenome(genome, instances, w, h) {
+          const byUid = new Map(instances.map(b => [b.uid, b]));
+          const genes = normalizeGenome(genome);
+          const occ = Array.from({ length: w }, () => Array(h).fill(false));
+          const inBoundsRect = (x, y, bw, bh) => x >= 0 && y >= 0 && x + bw <= w && y + bh <= h;
+          const canPlaceRect = (x, y, bw, bh) => {
+            if (!inBoundsRect(x, y, bw, bh)) return false;
+            for (let yy = y; yy < y + bh; yy++) {
+              for (let xx = x; xx < x + bw; xx++) if (occ[xx][yy]) return false;
+            }
+            return true;
+          };
+          const paintRect = (x, y, bw, bh) => {
+            for (let yy = y; yy < y + bh; yy++) for (let xx = x; xx < x + bw; xx++) occ[xx][yy] = true;
+          };
+          const spiralOffsets = radius => {
+            const out = [];
+            for (let dy = -radius; dy <= radius; dy++) {
+              for (let dx = -radius; dx <= radius; dx++) {
+                if (Math.abs(dx) + Math.abs(dy) !== radius) continue;
+                out.push({ dx, dy });
+              }
+            }
+            return out;
+          };
+
+          const placed = [];
+          for (const g of genes) {
+            const base = byUid.get(g.uid);
+            if (!base) return null;
+            const canRotate = base.w !== base.h && base.id !== 'infra_lagerhaus';
+            const rot = canRotate ? (Math.abs(g.rot | 0) % 2) : 0;
+            const bw = rot ? base.h : base.w;
+            const bh = rot ? base.w : base.h;
+            let tx = Math.max(0, Math.min(w - bw, Math.round(g.x)));
+            let ty = Math.max(0, Math.min(h - bh, Math.round(g.y)));
+            let found = null;
+            if (canPlaceRect(tx, ty, bw, bh)) found = { x: tx, y: ty };
+            for (let r = 1; !found && r <= 8; r++) {
+              const offs = spiralOffsets(r);
+              for (const o of offs) {
+                const nx = tx + o.dx;
+                const ny = ty + o.dy;
+                if (!canPlaceRect(nx, ny, bw, bh)) continue;
+                found = { x: nx, y: ny };
+                break;
+              }
+            }
+            if (!found) {
+              let best = null;
+              let bestDist = Infinity;
+              for (let y0 = 0; y0 <= h - bh; y0++) {
+                for (let x0 = 0; x0 <= w - bw; x0++) {
+                  if (!canPlaceRect(x0, y0, bw, bh)) continue;
+                  const d = Math.abs(x0 - tx) + Math.abs(y0 - ty);
+                  if (d < bestDist) {
+                    bestDist = d;
+                    best = { x: x0, y: y0 };
+                  }
+                }
+              }
+              found = best;
+            }
+            if (!found) return null;
+            paintRect(found.x, found.y, bw, bh);
+            placed.push({ ...base, x: found.x, y: found.y, w: bw, h: bh });
+          }
+          if (placed.length !== instances.length) return null;
+          return placed;
+        }
+        function evaluateGenome(genome, instances, w, h, label) {
+          const buildings = buildPlacedFromGenome(genome, instances, w, h);
+          if (!buildings) return { fitness: 9e9, solution: null };
+          const sol = evaluatePlacement(buildings, w, h, label);
+          if (!sol) return { fitness: 9e9, solution: null };
+          return { fitness: sol.score, solution: sol };
+        }
+        function tournamentPick(population, rnd, k = 4) {
+          let best = null;
+          const bound = Math.max(1, Math.floor(population.length * 0.75));
+          for (let i = 0; i < k; i++) {
+            const cand = population[Math.floor(rnd() * bound)];
+            if (!best || cand.fitness < best.fitness) best = cand;
+          }
+          return best;
+        }
+        function crossoverGenomes(parentA, parentB, instances, rnd) {
+          const mapA = new Map(parentA.map(g => [g.uid, g]));
+          const mapB = new Map(parentB.map(g => [g.uid, g]));
+          const xs = parentA.concat(parentB).map(g => g.x);
+          const ys = parentA.concat(parentB).map(g => g.y);
+          const splitX = xs.length ? xs[Math.floor(rnd() * xs.length)] : 0;
+          const splitY = ys.length ? ys[Math.floor(rnd() * ys.length)] : 0;
+          const out = [];
+          for (const b of instances) {
+            const ga = mapA.get(b.uid) || { uid: b.uid, x: 0, y: 0, rot: 0, order: 0 };
+            const gb = mapB.get(b.uid) || ga;
+            const takeA = (ga.x <= splitX) || (ga.y <= splitY);
+            const src = takeA ? ga : gb;
+            const alt = takeA ? gb : ga;
+            const blend = rnd() < 0.3 ? (0.2 + rnd() * 0.6) : 0;
+            const x = blend ? Math.round(src.x * (1 - blend) + alt.x * blend) : src.x;
+            const y = blend ? Math.round(src.y * (1 - blend) + alt.y * blend) : src.y;
+            const rot = rnd() < 0.75 ? src.rot : alt.rot;
+            const order = ((src.order + alt.order) / 2) + (rnd() - 0.5) * 4;
+            out.push({ uid: b.uid, x, y, rot, order });
+          }
+          return normalizeGenome(out);
+        }
+        function mutateGenome(genome, instances, w, h, rnd, temperature, bestFitness) {
+          const out = cloneGenome(genome);
+          const quality = clamp(1 - (bestFitness / 4000), 0, 1);
+          const mutRate = clamp(0.08 + temperature * 0.35 + (1 - quality) * 0.12, 0.03, 0.65);
+          const uidMap = new Map(instances.map(b => [b.uid, b]));
+          const step = 1 + Math.floor(temperature * 4);
+          for (const g of out) {
+            const base = uidMap.get(g.uid);
+            if (!base) continue;
+            const canRotate = base.w !== base.h && base.id !== 'infra_lagerhaus';
+            if (rnd() < mutRate) {
+              g.x += Math.floor((rnd() * (step * 2 + 1))) - step;
+              g.y += Math.floor((rnd() * (step * 2 + 1))) - step;
+            }
+            if (canRotate && rnd() < mutRate * 0.55) g.rot = (g.rot + 1) % 2;
+            if (rnd() < mutRate * 0.45) g.order += (rnd() - 0.5) * (8 * temperature + 2);
+            const bw = (canRotate && (g.rot % 2)) ? base.h : base.w;
+            const bh = (canRotate && (g.rot % 2)) ? base.w : base.h;
+            g.x = Math.max(0, Math.min(w - bw, Math.round(g.x)));
+            g.y = Math.max(0, Math.min(h - bh, Math.round(g.y)));
+          }
+          if (out.length >= 2 && rnd() < mutRate * 0.35) {
+            const i = Math.floor(rnd() * out.length);
+            const j = Math.floor(rnd() * out.length);
+            const tmp = out[i].order;
+            out[i].order = out[j].order;
+            out[j].order = tmp;
+          }
+          return normalizeGenome(out);
+        }
+        function seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats) {
+          const population = [];
+          const seedPerStrategy = 4;
+          for (const strategy of STRATEGY_NAMES) {
+            for (let i = 0; i < seedPerStrategy; i++) {
+              if (population.length >= popSize) break;
+              strategyStats[strategy].attempts++;
+              const placed = packWithStrategy(instances, w, h, rnd, strategy);
+              if (!placed) continue;
+              const genome = genomeFromBuildings(instances, placed, rnd);
+              const ev = evaluateGenome(genome, instances, w, h, 'seed_' + strategy);
+              if (!ev.solution) continue;
+              strategyStats[strategy].hits++;
+              strategyStats[strategy].bestPads = strategyStats[strategy].bestPads == null ? ev.solution.pads : Math.min(strategyStats[strategy].bestPads, ev.solution.pads);
+              strategyStats[strategy].avgPads = strategyStats[strategy].avgPads == null ? ev.solution.pads : (strategyStats[strategy].avgPads * 0.82 + ev.solution.pads * 0.18);
+              const quality = 1 / (1 + (ev.solution.pads || 0) + (ev.solution.missingFields || 0) * 60);
+              strategyWeights[strategy] = clamp((strategyWeights[strategy] * 0.96) + (quality * 14), 0.15, 8);
+              population.push({ genome: normalizeGenome(genome), fitness: ev.fitness, solution: ev.solution });
+            }
+          }
+          while (population.length < popSize) {
+            const genome = randomGenome(instances, w, h, rnd);
+            const ev = evaluateGenome(genome, instances, w, h, 'seed_random');
+            population.push({ genome: normalizeGenome(genome), fitness: ev.fitness, solution: ev.solution });
+          }
+          return population;
+        }
+        function evolveForCandidate(instances, w, h, seed, strategyWeights, strategyStats, generations, popSize) {
+          const rnd = rng(seed >>> 0);
+          let population = seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats);
+          const eliteCount = Math.max(4, Math.floor(popSize * 0.14));
+          for (let gen = 0; gen < generations; gen++) {
+            if (cancelled) break;
+            population.sort((a, b) => a.fitness - b.fitness);
+            const bestFitness = population[0].fitness;
+            const temp = Math.max(0.02, 1 - (gen / Math.max(1, generations - 1)));
+            const next = [];
+            for (let i = 0; i < eliteCount && i < population.length; i++) {
+              const e = population[i];
+              next.push({ genome: cloneGenome(e.genome), fitness: e.fitness, solution: e.solution });
+            }
+            while (next.length < popSize) {
+              const pa = tournamentPick(population, rnd, 5);
+              const pb = tournamentPick(population, rnd, 5);
+              let childGenome = crossoverGenomes(pa.genome, pb.genome, instances, rnd);
+              childGenome = mutateGenome(childGenome, instances, w, h, rnd, temp, bestFitness);
+              const childEval = evaluateGenome(childGenome, instances, w, h, 'evo_g' + gen);
+              const parentFitness = Math.min(pa.fitness, pb.fitness);
+              const delta = childEval.fitness - parentFitness;
+              const accept = (delta <= 0) || (rnd() < Math.exp(-delta / Math.max(1, temp * 300)));
+              if (accept) {
+                next.push({ genome: childGenome, fitness: childEval.fitness, solution: childEval.solution });
+              } else {
+                const keep = rnd() < 0.5 ? pa : pb;
+                next.push({ genome: cloneGenome(keep.genome), fitness: keep.fitness, solution: keep.solution });
+              }
+            }
+            population = next;
+          }
+          population.sort((a, b) => a.fitness - b.fitness);
+          return population;
         }
         function layoutKey(sol) {
           const core = sol.items.filter(it => it.kind === 'building').map(it => it.id + ':' + it.x + ',' + it.y + ',' + it.w + ',' + it.h).sort().join('|');
@@ -1758,87 +1987,64 @@
           if (!instances.length) { postMessage({ type: 'done', solutions: [] }); return; }
           const strategyWeights = sanitizeStrategyWeights(inputWeights || {});
           const strategyStats = Object.fromEntries(STRATEGY_NAMES.map(name => [name, { attempts: 0, hits: 0, bestPads: null, avgPads: null }]));
-          const candidates = buildCandidates(instances, gridW, gridH);
+          const candidates = buildCandidates(instances, gridW, gridH).slice(0, 14);
           const tileFarmCount = instances.filter(b => b.fields && (b.fields.unitW || 1) === 1 && (b.fields.unitH || 1) === 1).length;
           const rectFarmCount = instances.filter(b => b.fields && ((b.fields.unitW || 1) > 1 || (b.fields.unitH || 1) > 1)).length;
           const pigFarmCount = instances.filter(b => String(b.id || '').includes('schweinehof')).length;
           const fieldLoad = instances.reduce((s, b) => s + (b.fields ? Math.max(0, Math.floor(Number(b.fields.count) || 0)) : 0), 0);
-          const attemptsPerCandidate = Math.max(10, Math.min(28, 10 + Math.floor(tileFarmCount / 2) + Math.floor(rectFarmCount / 2) + pigFarmCount + Math.floor(fieldLoad / 180)));
-          const maxAttempts = candidates.length * attemptsPerCandidate;
+          const generations = Math.max(14, Math.min(34, 16 + Math.floor(tileFarmCount / 2) + Math.floor(rectFarmCount / 2) + pigFarmCount + Math.floor(fieldLoad / 220)));
+          const popSize = 50;
+          const maxAttempts = candidates.length * generations;
           let tries = 0;
           const solutions = [];
           const keys = new Set();
 
           for (const cand of candidates) {
             if (cancelled) break;
-            for (let i = 0; i < attemptsPerCandidate; i++) {
-              if (cancelled) break;
-              const salt = (Number(seedSalt) || 0) >>> 0;
-              const seed = ((cand.w * 73856093) ^ (cand.h * 19349663) ^ ((i + 1) * 83492791) ^ ((salt + 1) * 2654435761)) >>> 0;
-              const pickRnd = rng((seed ^ 0x9e3779b9) >>> 0);
-              const strategy = weightedPickStrategy(strategyWeights, pickRnd);
-              strategyStats[strategy].attempts++;
-              const sol = solveOne(instances, cand.w, cand.h, seed >>> 0, strategy);
+            const salt = (Number(seedSalt) || 0) >>> 0;
+            const seed = ((cand.w * 73856093) ^ (cand.h * 19349663) ^ ((salt + 1) * 2654435761) ^ 911382323) >>> 0;
+            const population = evolveForCandidate(instances, cand.w, cand.h, seed, strategyWeights, strategyStats, generations, popSize);
+            for (let i = 0; i < generations; i++) {
               tries++;
-              if (sol) {
-                const st = strategyStats[strategy];
-                st.hits++;
-                st.bestPads = st.bestPads == null ? sol.pads : Math.min(st.bestPads, sol.pads);
-                st.avgPads = st.avgPads == null ? sol.pads : (st.avgPads * 0.85 + sol.pads * 0.15);
-
-                // Adaptive learning: fewer unused cells => stronger weight.
-                const quality = 1 / (1 + (sol.pads || 0) + (sol.missingFields || 0) * 80);
-                strategyWeights[strategy] = clamp((strategyWeights[strategy] * 0.94) + (quality * 18), 0.15, 8);
-
-                const k = layoutKey(sol);
-                if (!keys.has(k)) {
-                  keys.add(k);
-                  solutions.push(sol);
-                  solutions.sort((a, b) => a.score - b.score);
-                  if (solutions.length > 12) solutions.splice(12);
-                }
-              } else {
-                strategyWeights[strategy] = clamp((strategyWeights[strategy] * 0.995), 0.15, 8);
-              }
               if (tries % 2 === 0 || tries === maxAttempts) {
-                const best = solutions[0] || null;
-                const topStrategy = STRATEGY_NAMES.slice().sort((a, b) => strategyWeights[b] - strategyWeights[a])[0];
+                const best = solutions[0] || (population[0] && population[0].solution) || null;
                 postMessage({
                   type: 'progress',
                   progress: Math.round((tries / Math.max(1, maxAttempts)) * 100),
                   tries,
                   maxAttempts,
                   best: best ? { score: best.score, bbox: best.bbox, missingFields: best.missingFields, pads: best.pads } : null,
-                  topStrategy
+                  topStrategy: 'genetic_evolution'
                 });
               }
             }
-          }
-          if (!cancelled && !solutions.length) {
-            const emergency = [];
-            const areaBuildings = instances.reduce((s, b) => s + b.w * b.h, 0);
-            const areaFields = instances.reduce((s, b) => s + (b.fields ? (b.fields.count * (b.fields.unitW || 1) * (b.fields.unitH || 1)) : 0), 0);
-            const baseArea = areaBuildings + areaFields;
-            for (let w = Math.max(20, Math.floor(Math.sqrt(baseArea) * 0.7)); w <= gridW; w += 5) {
-              const h = Math.min(gridH, Math.max(20, Math.ceil(baseArea / Math.max(1, w)) + 18));
-              emergency.push({ w, h });
+            const top = population.slice(0, 8);
+            for (const p of top) {
+              if (!p || !p.solution) continue;
+              const k = layoutKey(p.solution);
+              if (keys.has(k)) continue;
+              keys.add(k);
+              solutions.push(p.solution);
+              solutions.sort((a, b) => a.score - b.score);
+              if (solutions.length > 12) solutions.splice(12);
             }
-            for (const cand of emergency.slice(0, 18)) {
-              if (cancelled) break;
-              for (const sName of ['row_processing_gap1', 'row_area_gap1', 'col_area_gap0', 'row_height_gap0']) {
-                if (cancelled) break;
-                for (let r = 0; r < 4; r++) {
-                  const seed = ((cand.w * 92821) ^ (cand.h * 68917) ^ ((r + 1) * 124567) ^ (sName.length * 911)) >>> 0;
-                  const sol = solveOne(instances, cand.w, cand.h, seed, sName);
-                  if (!sol) continue;
-                  const k = layoutKey(sol);
-                  if (!keys.has(k)) {
-                    keys.add(k);
-                    solutions.push(sol);
-                    solutions.sort((a, b) => a.score - b.score);
-                    if (solutions.length > 12) solutions.splice(12);
-                  }
-                }
+          }
+
+          if (!cancelled && !solutions.length) {
+            const fallbackRnd = rng((((Number(seedSalt) || 0) + 1) * 2654435761) >>> 0);
+            for (const strategy of ['row_processing_gap1', 'row_area_gap1', 'col_area_gap0', 'row_height_gap0']) {
+              for (let r = 0; r < 8; r++) {
+                const c = candidates[Math.floor(fallbackRnd() * candidates.length)] || { w: gridW, h: gridH };
+                const placed = packWithStrategy(instances, c.w, c.h, fallbackRnd, strategy);
+                if (!placed) continue;
+                const sol = evaluatePlacement(placed, c.w, c.h, 'fallback_' + strategy);
+                if (!sol) continue;
+                const k = layoutKey(sol);
+                if (keys.has(k)) continue;
+                keys.add(k);
+                solutions.push(sol);
+                solutions.sort((a, b) => a.score - b.score);
+                if (solutions.length > 12) solutions.splice(12);
               }
             }
           }
