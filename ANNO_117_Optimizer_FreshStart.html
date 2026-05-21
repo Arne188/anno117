@@ -384,7 +384,7 @@
       { group: 'Infrastruktur', id: 'infra_lagerhaus', name: 'Lagerhaus', w: 6, h: 6, cat: 'infra', color: '#6a5a45', kind: 'building' },
       { group: 'Latium: Brot', id: 'need_brot_weizenhof', name: 'Weizenhof', w: 3, h: 4, cat: 'prod', color: '#c2a14a', kind: 'building', fields: { id: 'field_wheat', name: 'Weizen-Feld', count: 140, unitW: 1, unitH: 1, color: '#bfa846' } },
       { group: 'Latium: Brot', id: 'need_brot_baeckerei', name: 'Baeckerei', w: 4, h: 5, cat: 'prod', color: '#b7773a', kind: 'building' },
-      { group: 'Latium: Sandalen', id: 'need_sandalen_schweinehof', name: 'Schweinehof', w: 3, h: 4, cat: 'prod', color: '#a86b4a', kind: 'building', fields: { id: 'field_pigstall', name: 'Stall', count: 5, unitW: 2, unitH: 3, color: '#915d42', rotateSegments: true, brushAllowed: true, diagonalAllowed: true } },
+      { group: 'Latium: Sandalen', id: 'need_sandalen_schweinehof', name: 'Schweinehof', w: 3, h: 4, cat: 'prod', color: '#a86b4a', kind: 'building', fields: { id: 'field_pigstall', name: 'Stall', count: 5, unitW: 2, unitH: 3, color: '#915d42', rotateSegments: true, brushAllowed: false, diagonalAllowed: true, radiusInner: 8.5, radiusCenterOffsetX: 0, radiusCenterOffsetY: 0, radiusUseTileCenters: true } },
       { group: 'Latium: Sandalen', id: 'need_sandalen_gerberei', name: 'Gerberei', w: 3, h: 4, cat: 'prod', color: '#8b5a2b', kind: 'building' },
       { group: 'Latium: Sandalen', id: 'need_sandalen_sandalenmacher', name: 'Sandalenmacher', w: 3, h: 4, cat: 'prod', color: '#b77b3a', kind: 'building' },
       { group: 'Latium: Haferbrei', id: 'need_haferbrei_haferhof', name: 'Haferhof', w: 5, h: 5, cat: 'prod', color: '#7a8f3a', kind: 'building', fields: { id: 'field_oat', name: 'Hafer-Feld', count: 80, unitW: 1, unitH: 1, color: '#778d3a' } },
@@ -1251,13 +1251,167 @@
           }
           return Math.max(0, need - placed);
         }
+        function placePigStallFieldsBfs(farm, spec, blocked, occ, out) {
+          const W = blocked.length, H = blocked[0].length;
+          const unitW = Math.max(1, Math.floor(spec.unitW || 1));
+          const unitH = Math.max(1, Math.floor(spec.unitH || 1));
+          const needSegments = Math.max(0, Math.floor(Number(spec.count) || 0));
+          const rotateSegments = !!spec.rotateSegments || (unitW !== unitH);
+          const radiusInner = Math.max(1, Number(spec.radiusInner) || 12.0);
+          const eps = 0.01;
+          const radiusSq = (radiusInner + eps) * (radiusInner + eps);
+          const centerX = farm.x + (farm.w / 2.0);
+          const centerY = farm.y + (farm.h / 2.0);
+          const variants = [{ w: unitW, h: unitH }];
+          if (rotateSegments && unitW !== unitH) variants.push({ w: unitH, h: unitW });
+          const inBounds = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
+          const isFarmCell = (x, y) => (x >= farm.x && x < farm.x + farm.w && y >= farm.y && y < farm.y + farm.h);
+          const farmRect = { x: farm.x, y: farm.y, w: farm.w, h: farm.h };
+          const ownRects = [];
+          const ownCells = new Set();
+          const queue = [];
+          const queued = new Set();
+
+          const distSq = (x, y) => {
+            const dx = x - centerX;
+            const dy = y - centerY;
+            return (dx * dx) + (dy * dy);
+          };
+          const touchesByEdge = (a, b) => (
+            ((a.x + a.w === b.x || b.x + b.w === a.x) && Math.max(a.y, b.y) < Math.min(a.y + a.h, b.y + b.h))
+            || ((a.y + a.h === b.y || b.y + b.h === a.y) && Math.max(a.x, b.x) < Math.min(a.x + a.w, b.x + b.w))
+          );
+          const rectOk = rect => {
+            if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > W || rect.y + rect.h > H) return false;
+            for (let yy = rect.y; yy < rect.y + rect.h; yy++) {
+              for (let xx = rect.x; xx < rect.x + rect.w; xx++) {
+                const k = key(xx, yy);
+                if (blocked[xx][yy] || occ.has(k)) return false;
+              }
+            }
+            return true;
+          };
+          const rectWithinRadius = rect => {
+            for (let yy = rect.y; yy < rect.y + rect.h; yy++) {
+              for (let xx = rect.x; xx < rect.x + rect.w; xx++) {
+                if (distSq(xx, yy) > radiusSq) return false;
+              }
+            }
+            return true;
+          };
+          const connected = rect => touchesByEdge(rect, farmRect) || ownRects.some(r => touchesByEdge(rect, r));
+          const rectSig = rect => String(rect.x) + ',' + String(rect.y) + ',' + String(rect.w) + ',' + String(rect.h);
+          const addCandidate = rect => {
+            if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > W || rect.y + rect.h > H) return;
+            const sig = rectSig(rect);
+            if (queued.has(sig)) return;
+            queued.add(sig);
+            queue.push(rect);
+          };
+          const addCandidatesForSeed = (sx, sy) => {
+            for (const v of variants) {
+              for (let y = sy - v.h + 1; y <= sy; y++) {
+                for (let x = sx - v.w + 1; x <= sx; x++) {
+                  const rect = { x, y, w: v.w, h: v.h };
+                  if (!(sx >= rect.x && sx < rect.x + rect.w && sy >= rect.y && sy < rect.y + rect.h)) continue;
+                  addCandidate(rect);
+                }
+              }
+            }
+          };
+          const compactAdjScore = rect => {
+            let c = 0;
+            for (let yy = rect.y; yy < rect.y + rect.h; yy++) {
+              for (let xx = rect.x; xx < rect.x + rect.w; xx++) {
+                const neigh = [
+                  { x: xx + 1, y: yy },
+                  { x: xx - 1, y: yy },
+                  { x: xx, y: yy + 1 },
+                  { x: xx, y: yy - 1 }
+                ];
+                for (const n of neigh) {
+                  if (!inBounds(n.x, n.y)) continue;
+                  const nk = key(n.x, n.y);
+                  if (isFarmCell(n.x, n.y) || ownCells.has(nk)) c++;
+                }
+              }
+            }
+            return c;
+          };
+          const rectCenterDist = rect => {
+            const rx = rect.x + (rect.w / 2.0);
+            const ry = rect.y + (rect.h / 2.0);
+            const dx = rx - centerX;
+            const dy = ry - centerY;
+            return (dx * dx) + (dy * dy);
+          };
+          const placeRect = rect => {
+            for (let yy = rect.y; yy < rect.y + rect.h; yy++) {
+              for (let xx = rect.x; xx < rect.x + rect.w; xx++) {
+                const k = key(xx, yy);
+                occ.add(k);
+                ownCells.add(k);
+              }
+            }
+            ownRects.push(rect);
+            out.push({
+              id: spec.id,
+              kind: 'field',
+              name: spec.name,
+              x: rect.x,
+              y: rect.y,
+              w: rect.w,
+              h: rect.h,
+              color: spec.color || '#8a8',
+              farmUid: farm.uid
+            });
+          };
+          const addExpansionCandidates = rect => {
+            for (let x = rect.x; x < rect.x + rect.w; x++) {
+              addCandidatesForSeed(x, rect.y - 1);
+              addCandidatesForSeed(x, rect.y + rect.h);
+            }
+            for (let y = rect.y; y < rect.y + rect.h; y++) {
+              addCandidatesForSeed(rect.x - 1, y);
+              addCandidatesForSeed(rect.x + rect.w, y);
+            }
+          };
+
+          for (const s of farmAdjacentSeeds(farm, W, H)) addCandidatesForSeed(s.x, s.y);
+
+          let placed = 0;
+          while (queue.length && placed < needSegments) {
+            queue.sort((a, b) => {
+              const ca = compactAdjScore(a);
+              const cb = compactAdjScore(b);
+              if (cb !== ca) return cb - ca;
+              return rectCenterDist(a) - rectCenterDist(b);
+            });
+            const cur = queue.shift();
+            queued.delete(rectSig(cur));
+            if (!rectOk(cur)) continue;
+            if (!rectWithinRadius(cur)) continue;
+            if (!connected(cur)) continue;
+            placeRect(cur);
+            placed++;
+            addExpansionCandidates(cur);
+          }
+          return Math.max(0, needSegments - placed);
+        }
         function placeRectFields(farm, spec, blocked, occ, out) {
+          const isPigStall = String(spec.id || '') === 'field_pigstall' || String(farm.id || '').includes('schweinehof');
           const W = blocked.length, H = blocked[0].length;
           const unitW = Math.max(1, Math.floor(spec.unitW || 1));
           const unitH = Math.max(1, Math.floor(spec.unitH || 1));
           const need = Math.max(0, Math.floor(spec.count || 0));
           const rotateSegments = !!spec.rotateSegments || (unitW !== unitH);
-          const brushAllowed = !!spec.brushAllowed;
+          const brushAllowed = !!spec.brushAllowed && !isPigStall;
+          const radiusInner = Number(spec.radiusInner);
+          const useRadius = isPigStall && Number.isFinite(radiusInner) && radiusInner > 0;
+          const radiusSq = useRadius ? ((radiusInner + 0.01) * (radiusInner + 0.01)) : Infinity;
+          const radiusCenterOffsetX = Number(spec.radiusCenterOffsetX) || 0;
+          const radiusCenterOffsetY = Number(spec.radiusCenterOffsetY) || 0;
+          const radiusUseTileCenters = !!spec.radiusUseTileCenters;
           const ownRects = [];
           let placed = 0;
           const touchesByEdge = (a, b) => (
@@ -1274,6 +1428,19 @@
           const touchesFarmBuilding = rect => touchesByEdge(rect, { x: farm.x, y: farm.y, w: farm.w, h: farm.h });
           const rectOk = rect => {
             if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > W || rect.y + rect.h > H) return false;
+            if (useRadius) {
+              const cx = farm.x + (farm.w / 2.0) + radiusCenterOffsetX;
+              const cy = farm.y + (farm.h / 2.0) + radiusCenterOffsetY;
+              for (let yy = rect.y; yy < rect.y + rect.h; yy++) {
+                for (let xx = rect.x; xx < rect.x + rect.w; xx++) {
+                  const px = radiusUseTileCenters ? (xx + 0.5) : xx;
+                  const py = radiusUseTileCenters ? (yy + 0.5) : yy;
+                  const dx = px - cx;
+                  const dy = py - cy;
+                  if ((dx * dx) + (dy * dy) > radiusSq) return false;
+                }
+              }
+            }
             for (let yy = rect.y; yy < rect.y + rect.h; yy++) {
               for (let xx = rect.x; xx < rect.x + rect.w; xx++) {
                 const k = key(xx, yy);
