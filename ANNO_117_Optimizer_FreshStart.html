@@ -86,6 +86,40 @@
       border-bottom: 1px solid var(--line);
       background: #202325;
     }
+    .worker-setting {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: auto 84px 1fr;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .worker-setting input {
+      width: 84px;
+      height: 30px;
+      background: #101213;
+      border: 1px solid var(--line-soft);
+      color: var(--text);
+      border-radius: 5px;
+      padding: 0 8px;
+      text-align: center;
+    }
+    .toggle-setting {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .toggle-setting input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--gold);
+    }
     button, input {
       font: inherit;
     }
@@ -298,6 +332,18 @@
         <button id="cancelBtn" class="warn" disabled>Stop</button>
         <button id="resetCountsBtn">Mengen reset</button>
         <button id="clearSolutionsBtn">Treffer leeren</button>
+        <button id="exportTrainingBtn">Training export</button>
+        <button id="importTrainingBtn">Training import</button>
+        <input id="importTrainingFile" type="file" accept=".json,application/json" style="display:none" />
+        <label class="worker-setting" for="workerCountInput">
+          <span>Worker Override</span>
+          <input id="workerCountInput" type="number" min="0" max="14" step="1" value="0" />
+          <span>0 = Auto, 1-14 = feste Workerzahl</span>
+        </label>
+        <label class="toggle-setting" for="thermalSafeInput">
+          <input id="thermalSafeInput" type="checkbox" />
+          <span>Thermal Safe (weniger Hitze, stabiler, etwas langsamer)</span>
+        </label>
       </div>
       <div class="catalog-wrap" id="catalog"></div>
     </aside>
@@ -305,6 +351,9 @@
       <section class="status panel">
         <div id="statusText">Bereit.</div>
         <div class="bar"><div id="progressBar"></div></div>
+        <div class="tiny" id="runProgressText">Aktueller Lauf: -</div>
+        <div class="tiny" id="trainingSnapshotText">Trainingstand: wird geladen...</div>
+        <div class="tiny" id="liveTuningText">Aktiv: -</div>
         <div class="tiny" id="statusSub">Noch keine Berechnung gestartet.</div>
       </section>
       <section class="workspace">
@@ -327,6 +376,9 @@
     const CELL = 18;
     const STORAGE_KEY = 'anno117_fresh_counts_v1';
     const STRATEGY_WEIGHTS_KEY = 'anno117_fresh_strategy_weights_v1';
+    const AUTOTUNE_KEY = 'anno117_fresh_autotune_v1';
+    const WORKER_OVERRIDE_KEY = 'anno117_fresh_worker_override_v1';
+    const THERMAL_SAFE_KEY = 'anno117_fresh_thermal_safe_v1';
 
     const CATALOG = [
       { group: 'Infrastruktur', id: 'infra_lagerhaus', name: 'Lagerhaus', w: 6, h: 6, cat: 'infra', color: '#6a5a45', kind: 'building' },
@@ -347,6 +399,9 @@
 
     let counts = loadCounts();
     let strategyWeights = loadStrategyWeights();
+    let autoTuneState = loadAutoTuneState();
+    let workerOverride = loadWorkerOverride();
+    let thermalSafeMode = loadThermalSafeMode();
     let activeSolutions = [];
     let activeIndex = -1;
     let workerPool = [];
@@ -356,12 +411,20 @@
     let running = false;
     let cancelRequested = false;
     let trainingState = null;
+    let trainingDelayTimer = null;
+    let runStartTimers = [];
+    let liveTuningLastPaintMs = 0;
     const TRAIN_DEFAULT_RUNS = 40;
     const TRAIN_MAX_RUNS = 400;
+    const TRAIN_PAUSE_MS = 10000;
+    const RUN_SOFT_START_STAGGER_MS = 350;
 
     const catalogEl = document.getElementById('catalog');
     const statusTextEl = document.getElementById('statusText');
     const statusSubEl = document.getElementById('statusSub');
+    const runProgressTextEl = document.getElementById('runProgressText');
+    const trainingSnapshotTextEl = document.getElementById('trainingSnapshotText');
+    const liveTuningTextEl = document.getElementById('liveTuningText');
     const progressBarEl = document.getElementById('progressBar');
     const mapCanvas = document.getElementById('map');
     const solutionListEl = document.getElementById('solutionList');
@@ -369,6 +432,11 @@
     const optimizeBtnEl = document.getElementById('optimizeBtn');
     const trainBtnEl = document.getElementById('trainBtn');
     const cancelBtnEl = document.getElementById('cancelBtn');
+    const exportTrainingBtnEl = document.getElementById('exportTrainingBtn');
+    const importTrainingBtnEl = document.getElementById('importTrainingBtn');
+    const importTrainingFileEl = document.getElementById('importTrainingFile');
+    const workerCountInputEl = document.getElementById('workerCountInput');
+    const thermalSafeInputEl = document.getElementById('thermalSafeInput');
 
     function loadCounts() {
       try {
@@ -409,16 +477,236 @@
       }
     }
 
+    function loadAutoTuneState() {
+      try {
+        const raw = localStorage.getItem(AUTOTUNE_KEY);
+        if (!raw) return { preferredWorkers: null, bestAps: null, lastAps: null, samples: 0 };
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return { preferredWorkers: null, bestAps: null, lastAps: null, samples: 0 };
+        const preferredWorkers = Number.isFinite(Number(parsed.preferredWorkers)) ? Math.max(1, Math.floor(Number(parsed.preferredWorkers))) : null;
+        const bestAps = Number.isFinite(Number(parsed.bestAps)) ? Math.max(0, Number(parsed.bestAps)) : null;
+        const lastAps = Number.isFinite(Number(parsed.lastAps)) ? Math.max(0, Number(parsed.lastAps)) : null;
+        const samples = Number.isFinite(Number(parsed.samples)) ? Math.max(0, Math.floor(Number(parsed.samples))) : 0;
+        return { preferredWorkers, bestAps, lastAps, samples };
+      } catch {
+        return { preferredWorkers: null, bestAps: null, lastAps: null, samples: 0 };
+      }
+    }
+
+    function saveAutoTuneState() {
+      try {
+        localStorage.setItem(AUTOTUNE_KEY, JSON.stringify(autoTuneState || {}));
+      } catch {
+        // ignore storage errors
+      }
+    }
+
+    function loadWorkerOverride() {
+      try {
+        const raw = localStorage.getItem(WORKER_OVERRIDE_KEY);
+        const n = Math.floor(Number(raw) || 0);
+        return Math.max(0, Math.min(14, n));
+      } catch {
+        return 0;
+      }
+    }
+
+    function saveWorkerOverride(value) {
+      const n = Math.max(0, Math.min(14, Math.floor(Number(value) || 0)));
+      workerOverride = n;
+      try {
+        localStorage.setItem(WORKER_OVERRIDE_KEY, String(n));
+      } catch {
+        // ignore storage errors
+      }
+      return n;
+    }
+
+    function loadThermalSafeMode() {
+      try {
+        const raw = localStorage.getItem(THERMAL_SAFE_KEY);
+        return raw === '1';
+      } catch {
+        return false;
+      }
+    }
+
+    function saveThermalSafeMode(value) {
+      thermalSafeMode = !!value;
+      try {
+        localStorage.setItem(THERMAL_SAFE_KEY, thermalSafeMode ? '1' : '0');
+      } catch {
+        // ignore storage errors
+      }
+      return thermalSafeMode;
+    }
+
+    function clampNumber(v, lo, hi) {
+      return Math.max(lo, Math.min(hi, v));
+    }
+
+    function normalizedWeightsObject(raw) {
+      const out = {};
+      if (!raw || typeof raw !== 'object') return out;
+      for (const [k, v] of Object.entries(raw)) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) continue;
+        out[k] = clampNumber(n, 0.15, 8);
+      }
+      return out;
+    }
+
+    function mergeStrategyWeightsAdditive(current, incoming) {
+      const a = normalizedWeightsObject(current);
+      const b = normalizedWeightsObject(incoming);
+      const merged = {};
+      const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+      for (const key of keys) {
+        const av = Number.isFinite(a[key]) ? a[key] : 1;
+        const bv = Number.isFinite(b[key]) ? b[key] : 1;
+        merged[key] = clampNumber(1 + (av - 1) + (bv - 1), 0.15, 8);
+      }
+      return merged;
+    }
+
+    function normalizeAutoTune(raw) {
+      const inObj = raw && typeof raw === 'object' ? raw : {};
+      const preferredWorkers = Number.isFinite(Number(inObj.preferredWorkers))
+        ? Math.max(1, Math.floor(Number(inObj.preferredWorkers)))
+        : null;
+      const bestAps = Number.isFinite(Number(inObj.bestAps)) ? Math.max(0, Number(inObj.bestAps)) : null;
+      const lastAps = Number.isFinite(Number(inObj.lastAps)) ? Math.max(0, Number(inObj.lastAps)) : null;
+      const samples = Number.isFinite(Number(inObj.samples)) ? Math.max(0, Math.floor(Number(inObj.samples))) : 0;
+      return { preferredWorkers, bestAps, lastAps, samples };
+    }
+
+    function mergeAutoTuneAdditive(current, incoming) {
+      const a = normalizeAutoTune(current);
+      const b = normalizeAutoTune(incoming);
+      const aSamples = Math.max(0, a.samples || 0);
+      const bSamples = Math.max(0, b.samples || 0);
+      const totalSamples = aSamples + bSamples;
+
+      let preferredWorkers = a.preferredWorkers ?? b.preferredWorkers ?? null;
+      if (a.preferredWorkers != null && b.preferredWorkers != null && totalSamples > 0) {
+        preferredWorkers = Math.round(((a.preferredWorkers * Math.max(1, aSamples)) + (b.preferredWorkers * Math.max(1, bSamples))) / (Math.max(1, aSamples) + Math.max(1, bSamples)));
+      }
+
+      let lastAps = a.lastAps ?? b.lastAps ?? null;
+      if (a.lastAps != null && b.lastAps != null) lastAps = (a.lastAps + b.lastAps) / 2;
+
+      const bestAps = (a.bestAps == null)
+        ? b.bestAps
+        : (b.bestAps == null ? a.bestAps : Math.max(a.bestAps, b.bestAps));
+
+      return {
+        preferredWorkers: preferredWorkers == null ? null : Math.max(1, Math.floor(preferredWorkers)),
+        bestAps: bestAps == null ? null : Math.max(0, bestAps),
+        lastAps: lastAps == null ? null : Math.max(0, lastAps),
+        samples: totalSamples
+      };
+    }
+
+    function currentTrainingSnapshot() {
+      return {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        strategyWeights: normalizedWeightsObject(strategyWeights),
+        autoTuneState: normalizeAutoTune(autoTuneState)
+      };
+    }
+
+    function exportTrainingState() {
+      const payload = currentTrainingSnapshot();
+      const json = JSON.stringify(payload, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().replace(/[:]/g, '-').replace(/\..+/, '');
+      a.href = url;
+      a.download = `anno117-training-${stamp}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setStatus('Training exportiert.', 'Datei wurde heruntergeladen.', null);
+    }
+
+    function importTrainingFromObject(payload) {
+      if (!payload || typeof payload !== 'object') throw new Error('Ungueltige Trainingsdatei.');
+      const incomingWeights = payload.strategyWeights && typeof payload.strategyWeights === 'object'
+        ? payload.strategyWeights
+        : {};
+      const incomingAutoTune = payload.autoTuneState && typeof payload.autoTuneState === 'object'
+        ? payload.autoTuneState
+        : {};
+
+      const mergedWeights = mergeStrategyWeightsAdditive(strategyWeights, incomingWeights);
+      const mergedAutoTune = mergeAutoTuneAdditive(autoTuneState, incomingAutoTune);
+
+      strategyWeights = mergedWeights;
+      autoTuneState = mergedAutoTune;
+      saveStrategyWeights(strategyWeights);
+      saveAutoTuneState();
+
+      const weightCount = Object.keys(mergedWeights).length;
+      const sampleText = Number.isFinite(Number(mergedAutoTune.samples)) ? mergedAutoTune.samples : 0;
+      updateTrainingSnapshotText();
+      setStatus('Training importiert.', `${weightCount} Gewichte aktiv | Samples ${sampleText}`, null);
+    }
+
     function setStatus(text, sub = '', pct = null) {
       statusTextEl.textContent = text;
       statusSubEl.textContent = sub || '';
       if (pct != null) progressBarEl.style.width = `${Math.max(0, Math.min(100, pct)).toFixed(1)}%`;
     }
 
+    function setRunProgressText(value = null) {
+      if (value == null || value === '') {
+        runProgressTextEl.textContent = 'Aktueller Lauf: -';
+        return;
+      }
+      runProgressTextEl.textContent = `Aktueller Lauf: ${value}`;
+    }
+
+    function updateTrainingSnapshotText() {
+      const samples = Math.max(0, Math.floor(Number(autoTuneState?.samples) || 0));
+      const pref = Number.isFinite(Number(autoTuneState?.preferredWorkers))
+        ? Math.max(1, Math.floor(Number(autoTuneState.preferredWorkers)))
+        : 'auto';
+      const bestAps = Number.isFinite(Number(autoTuneState?.bestAps)) ? Number(autoTuneState.bestAps).toFixed(2) : '-';
+      const lastAps = Number.isFinite(Number(autoTuneState?.lastAps)) ? Number(autoTuneState.lastAps).toFixed(2) : '-';
+      trainingSnapshotTextEl.textContent = `Trainingstand: samples ${samples} | prefWorker ${pref} | APS best/last ${bestAps}/${lastAps}`;
+    }
+
+    function setLiveTuningText(text = null, force = false) {
+      const now = performance.now();
+      if (!force && (now - liveTuningLastPaintMs) < 250) return;
+      liveTuningLastPaintMs = now;
+      liveTuningTextEl.textContent = text && String(text).trim() ? `Aktiv: ${text}` : 'Aktiv: -';
+    }
+
     function setRunUi(active) {
       optimizeBtnEl.disabled = !!active;
       trainBtnEl.disabled = !!active;
       cancelBtnEl.disabled = !active;
+      exportTrainingBtnEl.disabled = !!active;
+      importTrainingBtnEl.disabled = !!active;
+      workerCountInputEl.disabled = !!active;
+      thermalSafeInputEl.disabled = !!active;
+    }
+
+    function clearTrainingDelayTimer() {
+      if (trainingDelayTimer != null) {
+        clearTimeout(trainingDelayTimer);
+        trainingDelayTimer = null;
+      }
+    }
+
+    function clearRunStartTimers() {
+      if (!runStartTimers.length) return;
+      for (const t of runStartTimers) clearTimeout(t);
+      runStartTimers = [];
     }
 
     function estimatedWorkload() {
@@ -433,20 +721,60 @@
       return { buildingCount, fieldCount };
     }
 
-    function optimizerWorkerCount() {
+    function adaptiveBaseWorkers() {
       const cores = Math.max(1, Math.floor(Number(navigator.hardwareConcurrency) || 4));
-      const cpuBudget = Math.max(1, cores - 1);
+      const deviceMemory = Number(navigator.deviceMemory);
+      const mem = Number.isFinite(deviceMemory) ? Math.max(2, deviceMemory) : 8;
+      let base = Math.max(1, Math.min(14, Math.floor(cores * 0.9)));
+      if (mem <= 4) base = Math.max(1, Math.min(base, 4));
+      else if (mem <= 8) base = Math.max(1, Math.min(base, 8));
+      return base;
+    }
+
+    function learnAutoTuning(workerCount, totalAttempts, durationMs) {
+      if (!Number.isFinite(totalAttempts) || !Number.isFinite(durationMs) || totalAttempts <= 0 || durationMs <= 300) return;
+      const aps = totalAttempts / Math.max(0.3, durationMs / 1000);
+      autoTuneState.samples = Math.max(0, Number(autoTuneState.samples) || 0) + 1;
+      autoTuneState.lastAps = aps;
+      autoTuneState.preferredWorkers = Number.isFinite(Number(autoTuneState.preferredWorkers))
+        ? Math.max(1, Math.floor(Number(autoTuneState.preferredWorkers)))
+        : workerCount;
+
+      if (!Number.isFinite(Number(autoTuneState.bestAps)) || aps > autoTuneState.bestAps * 1.03) {
+        autoTuneState.bestAps = aps;
+        autoTuneState.preferredWorkers = workerCount;
+      } else if (autoTuneState.bestAps && aps < autoTuneState.bestAps * 0.82 && workerCount > 1) {
+        autoTuneState.preferredWorkers = Math.max(1, workerCount - 1);
+      }
+      saveAutoTuneState();
+      updateTrainingSnapshotText();
+    }
+
+    function optimizerWorkerCount() {
+      if (workerOverride > 0) return Math.max(1, Math.min(14, workerOverride));
+      const base = adaptiveBaseWorkers();
       const load = estimatedWorkload();
       const pressure = load.buildingCount + Math.floor(load.fieldCount / 45);
 
-      let cap = 10;
-      if (pressure >= 180) cap = 4;
-      else if (pressure >= 120) cap = 5;
-      else if (pressure >= 70) cap = 6;
-      else if (pressure >= 30) cap = 8;
+      let cap = base;
+      if (pressure >= 220) cap = Math.max(2, Math.floor(base * 0.45));
+      else if (pressure >= 150) cap = Math.max(2, Math.floor(base * 0.55));
+      else if (pressure >= 100) cap = Math.max(2, Math.floor(base * 0.65));
+      else if (pressure >= 60) cap = Math.max(2, Math.floor(base * 0.8));
 
+      const preferred = Number(autoTuneState.preferredWorkers);
+      if (Number.isFinite(preferred) && preferred > 0) {
+        const ceiling = Math.min(14, base + 2);
+        const samples = Math.max(0, Math.floor(Number(autoTuneState.samples) || 0));
+        const exploreBoost = (samples < 6 || (samples % 6 === 0)) ? 1 : 0;
+        const tunedTarget = Math.floor(preferred) + exploreBoost;
+        cap = Math.min(cap, ceiling);
+        cap = Math.max(1, Math.min(cap, tunedTarget));
+      }
+
+      if (thermalSafeMode) cap = Math.min(cap, trainingState ? 5 : 6);
       if (trainingState) cap = Math.min(cap, 6);
-      return Math.max(1, Math.min(14, cap, cpuBudget));
+      return Math.max(1, Math.min(14, cap));
     }
 
     function terminateWorkerPool() {
@@ -2030,12 +2358,13 @@
         }
         function solve(payload) {
           cancelled = false;
-          const { counts, catalog, gridW, gridH, strategyWeights: inputWeights, seedSalt = 0, candidateOffset = 0, candidateStride = 1, workerId = 0, workerCount = 1, runId = 0 } = payload;
+          const { counts, catalog, gridW, gridH, strategyWeights: inputWeights, seedSalt = 0, candidateOffset = 0, candidateStride = 1, workerId = 0, workerCount = 1, runId = 0, thermalSafe = false } = payload;
           const instances = buildInstances(counts, catalog);
           if (!instances.length) { postMessage({ type: 'done', solutions: [], workerId, workerCount, runId }); return; }
           const strategyWeights = sanitizeStrategyWeights(inputWeights || {});
           const strategyStats = Object.fromEntries(STRATEGY_NAMES.map(name => [name, { attempts: 0, hits: 0, bestPads: null, avgPads: null }]));
-          const allCandidates = buildCandidates(instances, gridW, gridH).slice(0, 14);
+          const candidateLimit = thermalSafe ? 10 : 14;
+          const allCandidates = buildCandidates(instances, gridW, gridH).slice(0, candidateLimit);
           const stride = Math.max(1, Math.floor(Number(candidateStride) || 1));
           const offset = Math.max(0, Math.floor(Number(candidateOffset) || 0));
           const candidates = allCandidates.filter((_, idx) => (idx % stride) === offset);
@@ -2043,8 +2372,9 @@
           const rectFarmCount = instances.filter(b => b.fields && ((b.fields.unitW || 1) > 1 || (b.fields.unitH || 1) > 1)).length;
           const pigFarmCount = instances.filter(b => String(b.id || '').includes('schweinehof')).length;
           const fieldLoad = instances.reduce((s, b) => s + (b.fields ? Math.max(0, Math.floor(Number(b.fields.count) || 0)) : 0), 0);
-          const generations = Math.max(14, Math.min(34, 16 + Math.floor(tileFarmCount / 2) + Math.floor(rectFarmCount / 2) + pigFarmCount + Math.floor(fieldLoad / 220)));
-          const popSize = 50;
+          const baseGenerations = Math.max(14, Math.min(34, 16 + Math.floor(tileFarmCount / 2) + Math.floor(rectFarmCount / 2) + pigFarmCount + Math.floor(fieldLoad / 220)));
+          const generations = thermalSafe ? Math.max(12, Math.floor(baseGenerations * 0.8)) : baseGenerations;
+          const popSize = thermalSafe ? 36 : 50;
           const maxAttempts = candidates.length * generations;
           let tries = 0;
           const solutions = [];
@@ -2103,7 +2433,7 @@
             }
           }
           solutions.sort((a, b) => a.score - b.score);
-          postMessage({ type: 'done', solutions, strategyWeights, strategyStats, workerId, workerCount, runId });
+          postMessage({ type: 'done', solutions, strategyWeights, strategyStats, workerId, workerCount, runId, tries, maxAttempts });
         }
         onmessage = ev => {
           const msg = ev.data || {};
@@ -2152,23 +2482,34 @@
       if (msg.type === 'progress') {
         if (trainingState) {
           const cycle = trainingState.done + 1;
+          const runPct = Math.max(0, Math.min(100, Math.floor(Number(msg.progress) || 0)));
+          setRunProgressText(`${runPct}%`);
           const bestText = msg.best
             ? `Lauf ${cycle}/${trainingState.totalRuns} | Beste aktuell ${msg.best.bbox.w}x${msg.best.bbox.h}, Unbenutzt ${msg.best.pads || 0}`
             : `Lauf ${cycle}/${trainingState.totalRuns} | Noch kein Treffer`;
           const stratText = msg.topStrategy ? ` | Strategie: ${msg.topStrategy}` : '';
+          const pctText = ` | Aktueller Lauf: ${runPct}%`;
           const pctBase = trainingState.done / Math.max(1, trainingState.totalRuns);
           const pctRun = (msg.progress || 0) / 100 / Math.max(1, trainingState.totalRuns);
-          setStatus(`Training laeuft...`, `${bestText}${stratText}`, (pctBase + pctRun) * 100);
+          setStatus(`Training laeuft...`, `${bestText}${pctText}${stratText}`, (pctBase + pctRun) * 100);
+          const elapsedSec = activeRun && activeRun.startedAt ? Math.max(0.1, (performance.now() - activeRun.startedAt) / 1000) : 0.1;
+          const apsNow = Math.max(0, (Number(msg.tries) || 0) / elapsedSec);
+          setLiveTuningText(`Worker ${activeRun ? activeRun.workerCount : '-'} | Versuche ${Number(msg.tries) || 0}/${Number(msg.maxAttempts) || 0} | APS ${apsNow.toFixed(2)} | ${msg.topStrategy || 'genetic'}`);
           return;
         }
         const bestText = msg.best
           ? `Beste: ${msg.best.bbox.w}x${msg.best.bbox.h}, MissingFields ${msg.best.missingFields}, Unbenutzt ${msg.best.pads || 0}`
           : 'Noch kein Treffer';
+        setRunProgressText(`${Math.max(0, Math.min(100, Math.floor(Number(msg.progress) || 0)))}%`);
         const stratText = msg.topStrategy ? ` | Strategie: ${msg.topStrategy}` : '';
         setStatus(`Suche laeuft... ${msg.tries}/${msg.maxAttempts}`, `${bestText}${stratText}`, msg.progress || 0);
+        const elapsedSec = activeRun && activeRun.startedAt ? Math.max(0.1, (performance.now() - activeRun.startedAt) / 1000) : 0.1;
+        const apsNow = Math.max(0, (Number(msg.tries) || 0) / elapsedSec);
+        setLiveTuningText(`Worker ${activeRun ? activeRun.workerCount : '-'} | Versuche ${Number(msg.tries) || 0}/${Number(msg.maxAttempts) || 0} | APS ${apsNow.toFixed(2)} | ${msg.topStrategy || 'genetic'}`);
       }
       if (msg.type === 'done') {
         if (activeRun) {
+          const runMeta = activeRun;
           activeRun.doneMessages.push(msg);
           activeRun.pending--;
           if (activeRun.pending > 0) return;
@@ -2177,11 +2518,15 @@
           const keys = new Set();
           const strategyStats = {};
           let mergedWeights = null;
+          let mergedTries = 0;
+          let mergedMaxAttempts = 0;
 
-          for (const done of activeRun.doneMessages) {
+          for (const done of runMeta.doneMessages) {
             if (done.strategyWeights && typeof done.strategyWeights === 'object') {
               mergedWeights = { ...(mergedWeights || {}), ...done.strategyWeights };
             }
+            mergedTries += Math.max(0, Math.floor(Number(done.tries) || 0));
+            mergedMaxAttempts += Math.max(0, Math.floor(Number(done.maxAttempts) || 0));
             if (done.strategyStats && typeof done.strategyStats === 'object') {
               for (const [name, stats] of Object.entries(done.strategyStats)) {
                 if (!strategyStats[name]) strategyStats[name] = { attempts: 0, hits: 0, bestPads: null, avgPads: null };
@@ -2209,7 +2554,9 @@
 
           solutions.sort((a, b) => a.score - b.score);
           if (solutions.length > 12) solutions.splice(12);
-          msg = { type: 'done', solutions, strategyWeights: mergedWeights, strategyStats };
+          const durationMs = Math.max(1, performance.now() - (runMeta.startedAt || performance.now()));
+          msg = { type: 'done', solutions, strategyWeights: mergedWeights, strategyStats, tries: mergedTries, maxAttempts: mergedMaxAttempts, durationMs };
+          if (!cancelRequested) learnAutoTuning(runMeta.workerCount, mergedTries || mergedMaxAttempts, durationMs);
           activeRun = null;
         }
         if (msg.strategyWeights && typeof msg.strategyWeights === 'object') {
@@ -2234,6 +2581,7 @@
           if (trainingState.cancelled || trainingState.done >= trainingState.totalRuns) {
             running = false;
             cancelRequested = false;
+            clearTrainingDelayTimer();
             const finished = trainingState.done;
             const total = trainingState.totalRuns;
             const best = trainingState.solutions[0] || null;
@@ -2252,13 +2600,31 @@
             } else {
               setStatus(`Training beendet: ${finished}/${total} Laeufe.`, 'Keine Loesung gefunden.', 0);
             }
+            setRunProgressText('-');
+            setLiveTuningText(null, true);
             trainingState = null;
             terminateWorkerPool();
             return;
           }
 
           const nextSalt = ((trainingState.done + 1) * 104729) ^ (Date.now() & 0xffff);
-          postOptimizeRun(nextSalt >>> 0);
+          const nextRun = trainingState.done + 1;
+          const totalRuns = trainingState.totalRuns;
+          const waitSec = Math.max(1, Math.ceil(TRAIN_PAUSE_MS / 1000));
+          terminateWorkerPool();
+          setStatus(
+            'Training Pause...',
+            `Naechster Lauf ${nextRun}/${totalRuns} startet in ${waitSec}s.`,
+            (trainingState.done / Math.max(1, totalRuns)) * 100
+          );
+          setRunProgressText('Pause');
+          setLiveTuningText(`Cooldown ${waitSec}s | naechster Lauf ${nextRun}/${totalRuns}`, true);
+          clearTrainingDelayTimer();
+          trainingDelayTimer = setTimeout(() => {
+            trainingDelayTimer = null;
+            if (!running || cancelRequested || !trainingState || trainingState.cancelled) return;
+            postOptimizeRun(nextSalt >>> 0, { softStart: true });
+          }, TRAIN_PAUSE_MS);
           return;
         }
 
@@ -2282,6 +2648,8 @@
           `Beste ${best.bbox.w}x${best.bbox.h} | MissingFields ${best.missingFields} | Unbenutzt ${best.pads || 0}${topText}`,
           100
         );
+        setRunProgressText('-');
+        setLiveTuningText(null, true);
         activeIndex = 0;
         renderSolutions();
         drawSolution(best);
@@ -2289,39 +2657,58 @@
       }
     }
 
-    function postOptimizeRun(seedSalt = 0) {
+    function postOptimizeRun(seedSalt = 0, opts = {}) {
+      clearRunStartTimers();
       const workerCount = optimizerWorkerCount();
+      const softStart = !!opts.softStart;
+      setLiveTuningText(softStart ? `Soft-Start mit ${workerCount} Workern...` : `Start mit ${workerCount} Workern...`, true);
       const runId = ++runSerial;
       activeRun = {
         runId,
         workerCount,
+        startedAt: performance.now(),
         pending: workerCount,
         doneMessages: [],
         progressByWorker: new Map()
       };
       const pool = ensureWorkerPool(workerCount);
       pool.forEach((w, i) => {
-        w.postMessage({
-          type: 'optimize',
-          payload: {
-            counts,
-            catalog: CATALOG,
-            gridW: GRID_W,
-            gridH: GRID_H,
-            strategyWeights,
-            seedSalt,
-            candidateOffset: i,
-            candidateStride: workerCount,
-            workerId: i,
-            workerCount,
-            runId
+        const startWorker = () => {
+          w.postMessage({
+            type: 'optimize',
+            payload: {
+              counts,
+              catalog: CATALOG,
+              gridW: GRID_W,
+              gridH: GRID_H,
+              strategyWeights,
+              seedSalt,
+              candidateOffset: i,
+              candidateStride: workerCount,
+              workerId: i,
+              workerCount,
+              runId,
+              thermalSafe: thermalSafeMode
+            }
+          });
+        };
+        if (softStart) {
+          const delay = i * RUN_SOFT_START_STAGGER_MS;
+          if (delay <= 0) {
+            startWorker();
+          } else {
+            runStartTimers.push(setTimeout(startWorker, delay));
           }
-        });
+        } else {
+          startWorker();
+        }
       });
     }
 
     function startTraining() {
       if (running) return;
+      clearTrainingDelayTimer();
+      clearRunStartTimers();
       if (totalSelected() === 0) {
         setStatus('Bitte mindestens ein Gebaeude waehlen.', 'Links die Mengen mit + setzen.', 0);
         return;
@@ -2346,6 +2733,8 @@
       drawSolution(null);
       setRunUi(true);
       setStatus('Training startet...', `0/${runs} Laeufe`, 0);
+      setRunProgressText('0%');
+      setLiveTuningText('Training initialisiert...', true);
       const seedSalt = (Date.now() ^ 0x9e3779b9) >>> 0;
       postOptimizeRun(seedSalt);
     }
@@ -2472,6 +2861,8 @@
 
     function startOptimize() {
       if (running) return;
+      clearTrainingDelayTimer();
+      clearRunStartTimers();
       if (totalSelected() === 0) {
         setStatus('Bitte mindestens ein Gebaeude waehlen.', 'Links die Mengen mit + setzen.', 0);
         return;
@@ -2484,21 +2875,59 @@
       renderSolutions();
       drawSolution(null);
       setStatus('Starte frische Optimierung...', 'Worker wird initialisiert.', 2);
+      setRunProgressText('0%');
+      setLiveTuningText('Optimierung initialisiert...', true);
       setRunUi(true);
       postOptimizeRun((Date.now() & 0xffff) >>> 0);
     }
 
     function cancelOptimize() {
-      if (!running || !workerPool.length) return;
+      if (!running) return;
       cancelRequested = true;
       if (trainingState) trainingState.cancelled = true;
-      for (const w of workerPool) w.postMessage({ type: 'cancel' });
-      setStatus('Abbruch angefordert...', 'Aktueller Lauf wird sauber gestoppt.', Number(progressBarEl.style.width.replace('%', '')) || 0);
+      clearTrainingDelayTimer();
+      clearRunStartTimers();
+      if (workerPool.length) {
+        for (const w of workerPool) w.postMessage({ type: 'cancel' });
+        setStatus('Abbruch angefordert...', 'Aktueller Lauf wird sauber gestoppt.', Number(progressBarEl.style.width.replace('%', '')) || 0);
+        setLiveTuningText('Abbruch angefordert...', true);
+      } else {
+        running = false;
+        const finished = trainingState ? trainingState.done : 0;
+        const total = trainingState ? trainingState.totalRuns : 0;
+        const best = trainingState && trainingState.solutions ? (trainingState.solutions[0] || null) : null;
+        if (trainingState) {
+          activeSolutions = trainingState.solutions.slice(0, 12);
+          activeIndex = best ? 0 : -1;
+          renderSolutions();
+          drawSolution(best);
+          trainingState = null;
+        }
+        setRunProgressText('-');
+        setRunUi(false);
+        setStatus(`Training gestoppt: ${finished}/${total} Laeufe.`, 'Pause/naechster Lauf wurde abgebrochen.', 0);
+        setLiveTuningText('Gestoppt.', true);
+      }
     }
 
     document.getElementById('optimizeBtn').addEventListener('click', startOptimize);
     document.getElementById('trainBtn').addEventListener('click', startTraining);
     document.getElementById('cancelBtn').addEventListener('click', cancelOptimize);
+    workerCountInputEl.value = String(workerOverride);
+    workerCountInputEl.addEventListener('change', () => {
+      const n = saveWorkerOverride(workerCountInputEl.value);
+      workerCountInputEl.value = String(n);
+      const info = n === 0 ? 'Auto aktiv (dynamisch).' : `Fix auf ${n} Worker.`;
+      setStatus('Worker-Einstellung gespeichert.', info, null);
+    });
+    thermalSafeInputEl.checked = !!thermalSafeMode;
+    thermalSafeInputEl.addEventListener('change', () => {
+      const on = saveThermalSafeMode(thermalSafeInputEl.checked);
+      thermalSafeInputEl.checked = on;
+      const text = on ? 'Thermal Safe aktiv.' : 'Thermal Safe deaktiviert.';
+      const sub = on ? 'Weniger Lastspitzen, mehr Stabilitaet.' : 'Maximale Leistung ohne Thermalschutz-Modus.';
+      setStatus('Thermal-Modus gespeichert.', `${text} ${sub}`, null);
+    });
     document.getElementById('resetCountsBtn').addEventListener('click', () => {
       counts = Object.fromEntries(CATALOG.map(c => [c.id, 0]));
       saveCounts();
@@ -2512,7 +2941,31 @@
       drawSolution(null);
       setStatus('Trefferliste geleert.', '', 0);
     });
+    exportTrainingBtnEl.addEventListener('click', () => {
+      if (running) return;
+      exportTrainingState();
+    });
+    importTrainingBtnEl.addEventListener('click', () => {
+      if (running) return;
+      importTrainingFileEl.value = '';
+      importTrainingFileEl.click();
+    });
+    importTrainingFileEl.addEventListener('change', async ev => {
+      if (running) return;
+      const file = ev.target && ev.target.files ? ev.target.files[0] : null;
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        importTrainingFromObject(data);
+      } catch (err) {
+        const msg = err && err.message ? err.message : 'Import fehlgeschlagen.';
+        setStatus('Import fehlgeschlagen.', msg, null);
+      }
+    });
     window.addEventListener('beforeunload', () => {
+      clearTrainingDelayTimer();
+      clearRunStartTimers();
       terminateWorkerPool();
       if (workerUrl) {
         URL.revokeObjectURL(workerUrl);
@@ -2523,6 +2976,9 @@
     buildCatalog();
     renderSolutions();
     drawSolution(null);
+    updateTrainingSnapshotText();
+    setRunProgressText('-');
+    setLiveTuningText(null, true);
     setStatus('Bereit.', 'Frischer Solver mit Worker-Engine.', 0);
   </script>
 </body>
