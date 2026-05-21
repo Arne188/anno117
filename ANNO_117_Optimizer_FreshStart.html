@@ -379,6 +379,7 @@
     const AUTOTUNE_KEY = 'anno117_fresh_autotune_v1';
     const WORKER_OVERRIDE_KEY = 'anno117_fresh_worker_override_v1';
     const THERMAL_SAFE_KEY = 'anno117_fresh_thermal_safe_v1';
+    const LAYOUT_PATTERN_MEMORY_KEY = 'anno117_fresh_layout_patterns_v1';
 
     const CATALOG = [
       { group: 'Infrastruktur', id: 'infra_lagerhaus', name: 'Lagerhaus', w: 6, h: 6, cat: 'infra', color: '#6a5a45', kind: 'building' },
@@ -387,6 +388,8 @@
       { group: 'Latium: Sandalen', id: 'need_sandalen_schweinehof', name: 'Schweinehof', w: 3, h: 4, cat: 'prod', color: '#a86b4a', kind: 'building', fields: { id: 'field_pigstall', name: 'Stall', count: 5, unitW: 2, unitH: 3, color: '#915d42', rotateSegments: true, brushAllowed: false, diagonalAllowed: true, radiusInner: 8.5, radiusCenterOffsetX: 0, radiusCenterOffsetY: 0, radiusUseTileCenters: true } },
       { group: 'Latium: Sandalen', id: 'need_sandalen_gerberei', name: 'Gerberei', w: 3, h: 4, cat: 'prod', color: '#8b5a2b', kind: 'building' },
       { group: 'Latium: Sandalen', id: 'need_sandalen_sandalenmacher', name: 'Sandalenmacher', w: 3, h: 4, cat: 'prod', color: '#b77b3a', kind: 'building' },
+      { group: 'Latium: Pilei', id: 'need_pilei_schafshof', name: 'Schafshof', w: 3, h: 3, cat: 'prod', color: '#d8d6cf', kind: 'building', prodTime: '00:30', upkeep: '-4 Einkommen / -3 Liberti', buildCost: '2 Bretter', chainHint: '1x Schafshof -> 2x Pileusfilzer', fields: { id: 'field_schafpferch', name: 'Schafpferch', count: 3, unitW: 3, unitH: 3, color: '#7d9a57', rotateSegments: false, brushAllowed: false, diagonalAllowed: true, firstRectMaxDist: 8 } },
+      { group: 'Latium: Pilei', id: 'need_pilei_pileusfilzer', name: 'Pileusfilzer', w: 3, h: 4, cat: 'prod', color: '#e2ddd3', kind: 'building', prodTime: '01:00', upkeep: '-8 Einkommen / -3 Liberti', buildCost: '2 Bretter', chainHint: 'verarbeitet Schafe zu Pilei' },
       { group: 'Latium: Haferbrei', id: 'need_haferbrei_haferhof', name: 'Haferhof', w: 5, h: 5, cat: 'prod', color: '#7a8f3a', kind: 'building', fields: { id: 'field_oat', name: 'Hafer-Feld', count: 80, unitW: 1, unitH: 1, color: '#778d3a' } },
       { group: 'Latium: Haferbrei', id: 'need_haferbrei_garkueche', name: 'Garkueche', w: 4, h: 4, cat: 'prod', color: '#a66a3f', kind: 'building' },
       { group: 'Latium: Tuniken', id: 'need_tuniken_latium_hanfhof', name: 'Hanfhof', w: 4, h: 3, cat: 'prod', color: '#2d7a3b', kind: 'building', fields: { id: 'field_hemp', name: 'Hanf-Feld', count: 60, unitW: 1, unitH: 1, color: '#2f8a35' } },
@@ -400,6 +403,7 @@
     let counts = loadCounts();
     let strategyWeights = loadStrategyWeights();
     let autoTuneState = loadAutoTuneState();
+    let layoutPatternMemory = loadLayoutPatternMemory();
     let workerOverride = loadWorkerOverride();
     let thermalSafeMode = loadThermalSafeMode();
     let activeSolutions = [];
@@ -418,6 +422,20 @@
     const TRAIN_MAX_RUNS = 400;
     const TRAIN_PAUSE_MS = 10000;
     const RUN_SOFT_START_STAGGER_MS = 350;
+    const TRAIN_COMPLEXITY_PROFILES = [
+      { id: 'klein', label: 'klein', minBuildings: 3, maxBuildings: 6, fieldBudget: 180, maxPerTypeField: 1, maxPerTypeOther: 2 },
+      { id: 'mittel', label: 'mittel', minBuildings: 6, maxBuildings: 11, fieldBudget: 420, maxPerTypeField: 2, maxPerTypeOther: 3 },
+      { id: 'komplex', label: 'komplex', minBuildings: 10, maxBuildings: 18, fieldBudget: 820, maxPerTypeField: 3, maxPerTypeOther: 4 }
+    ];
+    const TRAIN_CHAIN_LIBRARY = [
+      { id: 'latium_brot', label: 'Latium Brot', components: [{ id: 'need_brot_weizenhof', ratio: 1 }, { id: 'need_brot_baeckerei', ratio: 1 }] },
+      { id: 'latium_sandalen', label: 'Latium Sandalen', components: [{ id: 'need_sandalen_schweinehof', ratio: 1 }, { id: 'need_sandalen_gerberei', ratio: 1 }, { id: 'need_sandalen_sandalenmacher', ratio: 1 }] },
+      { id: 'latium_haferbrei', label: 'Latium Haferbrei', components: [{ id: 'need_haferbrei_haferhof', ratio: 1 }, { id: 'need_haferbrei_garkueche', ratio: 1 }] },
+      { id: 'latium_tuniken', label: 'Latium Tuniken', components: [{ id: 'need_tuniken_latium_hanfhof', ratio: 1 }, { id: 'need_tuniken_latium_spinnerei', ratio: 1 }] },
+      { id: 'latium_pilei', label: 'Latium Pilei', components: [{ id: 'need_pilei_schafshof', ratio: 1 }, { id: 'need_pilei_pileusfilzer', ratio: 2 }] },
+      { id: 'albion_tuniken', label: 'Albion Tuniken', components: [{ id: 'need_tuniken_hanfhof', ratio: 1 }, { id: 'need_tuniken_spinnerei', ratio: 1 }] },
+      { id: 'albion_schilfschuhe', label: 'Albion Schilfschuhe', components: [{ id: 'need_schilfschuhe_schilfsammler', ratio: 1 }, { id: 'need_schilfschuhe_schuhweber', ratio: 1 }] }
+    ];
 
     const catalogEl = document.getElementById('catalog');
     const statusTextEl = document.getElementById('statusText');
@@ -541,6 +559,121 @@
       return thermalSafeMode;
     }
 
+    function isTileFarmCatalogItem(c) {
+      if (!c || !c.fields) return false;
+      return (Number(c.fields.unitW) || 1) === 1 && (Number(c.fields.unitH) || 1) === 1;
+    }
+
+    function isPatternEligibleCatalogItem(c) {
+      return !!c && !isTileFarmCatalogItem(c);
+    }
+
+    function patternEligibleIdSet() {
+      return new Set(CATALOG.filter(isPatternEligibleCatalogItem).map(c => c.id));
+    }
+
+    function patternFingerprint(pat) {
+      if (!pat || !Array.isArray(pat.items)) return '';
+      const parts = pat.items
+        .map(it => `${it.id}:${it.occ}:${it.dx},${it.dy},${it.rot},${it.order}`)
+        .sort()
+        .join('|');
+      return parts;
+    }
+
+    function sanitizePatternMemory(raw) {
+      if (!Array.isArray(raw)) return [];
+      const allowedIds = patternEligibleIdSet();
+      const out = [];
+      for (const p of raw) {
+        if (!p || typeof p !== 'object' || !Array.isArray(p.items)) continue;
+        const items = [];
+        for (const it of p.items) {
+          if (!it || typeof it !== 'object') continue;
+          const id = String(it.id || '');
+          if (!allowedIds.has(id)) continue;
+          const occ = Math.max(0, Math.floor(Number(it.occ) || 0));
+          const dx = Math.max(-120, Math.min(120, Math.round(Number(it.dx) || 0)));
+          const dy = Math.max(-120, Math.min(120, Math.round(Number(it.dy) || 0)));
+          const rot = Math.max(0, Math.min(1, Math.floor(Number(it.rot) || 0)));
+          const order = Math.max(0, Math.min(400, Math.floor(Number(it.order) || 0)));
+          items.push({ id, occ, dx, dy, rot, order });
+        }
+        if (items.length < 2) continue;
+        items.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id) || a.occ - b.occ);
+        const countMap = {};
+        for (const [id, n] of Object.entries(p.countMap || {})) {
+          if (!allowedIds.has(id)) continue;
+          const cn = Math.max(0, Math.min(40, Math.floor(Number(n) || 0)));
+          if (cn > 0) countMap[id] = cn;
+        }
+        const anchorId = allowedIds.has(String(p.anchorId || '')) ? String(p.anchorId) : 'infra_lagerhaus';
+        out.push({
+          anchorId,
+          items,
+          countMap,
+          sourceScore: Number.isFinite(Number(p.sourceScore)) ? Number(p.sourceScore) : null,
+          useCount: Math.max(0, Math.floor(Number(p.useCount) || 0)),
+          createdAt: String(p.createdAt || new Date().toISOString()),
+          updatedAt: String(p.updatedAt || new Date().toISOString())
+        });
+      }
+      return out;
+    }
+
+    function compactPatternMemory(list) {
+      const clean = sanitizePatternMemory(list);
+      const byFp = new Map();
+      for (const p of clean) {
+        const fp = patternFingerprint(p);
+        if (!fp) continue;
+        const prev = byFp.get(fp);
+        if (!prev) {
+          byFp.set(fp, p);
+          continue;
+        }
+        const merged = { ...prev };
+        merged.useCount = Math.max(0, (Number(prev.useCount) || 0) + (Number(p.useCount) || 0));
+        if (prev.sourceScore == null) merged.sourceScore = p.sourceScore;
+        else if (p.sourceScore != null) merged.sourceScore = Math.min(prev.sourceScore, p.sourceScore);
+        merged.updatedAt = (String(prev.updatedAt) > String(p.updatedAt)) ? String(prev.updatedAt) : String(p.updatedAt);
+        byFp.set(fp, merged);
+      }
+      const out = [...byFp.values()];
+      out.sort((a, b) => {
+        const sa = a.sourceScore == null ? 9e9 : Number(a.sourceScore);
+        const sb = b.sourceScore == null ? 9e9 : Number(b.sourceScore);
+        if (sa !== sb) return sa - sb;
+        return (Number(b.useCount) || 0) - (Number(a.useCount) || 0);
+      });
+      if (out.length > 64) out.splice(64);
+      return out;
+    }
+
+    function loadLayoutPatternMemory() {
+      try {
+        const raw = localStorage.getItem(LAYOUT_PATTERN_MEMORY_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return compactPatternMemory(parsed);
+      } catch {
+        return [];
+      }
+    }
+
+    function saveLayoutPatternMemory() {
+      try {
+        layoutPatternMemory = compactPatternMemory(layoutPatternMemory);
+        localStorage.setItem(LAYOUT_PATTERN_MEMORY_KEY, JSON.stringify(layoutPatternMemory));
+      } catch {
+        // ignore storage errors
+      }
+    }
+
+    function mergePatternMemoryAdditive(current, incoming) {
+      return compactPatternMemory([...(Array.isArray(current) ? current : []), ...(Array.isArray(incoming) ? incoming : [])]);
+    }
+
     function clampNumber(v, lo, hi) {
       return Math.max(lo, Math.min(hi, v));
     }
@@ -612,7 +745,8 @@
         version: 1,
         exportedAt: new Date().toISOString(),
         strategyWeights: normalizedWeightsObject(strategyWeights),
-        autoTuneState: normalizeAutoTune(autoTuneState)
+        autoTuneState: normalizeAutoTune(autoTuneState),
+        layoutPatternMemory: compactPatternMemory(layoutPatternMemory)
       };
     }
 
@@ -640,19 +774,26 @@
       const incomingAutoTune = payload.autoTuneState && typeof payload.autoTuneState === 'object'
         ? payload.autoTuneState
         : {};
+      const incomingPatterns = Array.isArray(payload.layoutPatternMemory)
+        ? payload.layoutPatternMemory
+        : [];
 
       const mergedWeights = mergeStrategyWeightsAdditive(strategyWeights, incomingWeights);
       const mergedAutoTune = mergeAutoTuneAdditive(autoTuneState, incomingAutoTune);
+      const mergedPatterns = mergePatternMemoryAdditive(layoutPatternMemory, incomingPatterns);
 
       strategyWeights = mergedWeights;
       autoTuneState = mergedAutoTune;
+      layoutPatternMemory = mergedPatterns;
       saveStrategyWeights(strategyWeights);
       saveAutoTuneState();
+      saveLayoutPatternMemory();
 
       const weightCount = Object.keys(mergedWeights).length;
       const sampleText = Number.isFinite(Number(mergedAutoTune.samples)) ? mergedAutoTune.samples : 0;
+      const patternCount = Array.isArray(mergedPatterns) ? mergedPatterns.length : 0;
       updateTrainingSnapshotText();
-      setStatus('Training importiert.', `${weightCount} Gewichte aktiv | Samples ${sampleText}`, null);
+      setStatus('Training importiert.', `${weightCount} Gewichte aktiv | Samples ${sampleText} | Patterns ${patternCount}`, null);
     }
 
     function setStatus(text, sub = '', pct = null) {
@@ -676,7 +817,8 @@
         : 'auto';
       const bestAps = Number.isFinite(Number(autoTuneState?.bestAps)) ? Number(autoTuneState.bestAps).toFixed(2) : '-';
       const lastAps = Number.isFinite(Number(autoTuneState?.lastAps)) ? Number(autoTuneState.lastAps).toFixed(2) : '-';
-      trainingSnapshotTextEl.textContent = `Trainingstand: samples ${samples} | prefWorker ${pref} | APS best/last ${bestAps}/${lastAps}`;
+      const patternCount = Array.isArray(layoutPatternMemory) ? layoutPatternMemory.length : 0;
+      trainingSnapshotTextEl.textContent = `Trainingstand: samples ${samples} | prefWorker ${pref} | APS best/last ${bestAps}/${lastAps} | Patterns ${patternCount}`;
     }
 
     function setLiveTuningText(text = null, force = false) {
@@ -721,6 +863,302 @@
       return { buildingCount, fieldCount };
     }
 
+    function summarizeCountsMap(countMap) {
+      let buildingCount = 0;
+      let fieldCount = 0;
+      for (const c of CATALOG) {
+        const n = Math.max(0, Math.floor(Number(countMap?.[c.id]) || 0));
+        if (!n) continue;
+        buildingCount += n;
+        if (c.fields) fieldCount += n * Math.max(0, Math.floor(Number(c.fields.count) || 0));
+      }
+      return { buildingCount, fieldCount };
+    }
+
+    function makeSeededRnd(seed) {
+      let s = (Number(seed) || 1) >>> 0;
+      return () => {
+        s ^= s << 13;
+        s ^= s >>> 17;
+        s ^= s << 5;
+        return (s >>> 0) / 4294967296;
+      };
+    }
+
+    function pickTrainingProfile(runIndex, totalRuns, rnd) {
+      const phase = totalRuns > 1 ? (runIndex / (totalRuns - 1)) : 1;
+      const roll = rnd();
+      if (phase < 0.3) {
+        if (roll < 0.7) return TRAIN_COMPLEXITY_PROFILES[0];
+        if (roll < 0.95) return TRAIN_COMPLEXITY_PROFILES[1];
+        return TRAIN_COMPLEXITY_PROFILES[2];
+      }
+      if (phase < 0.7) {
+        if (roll < 0.25) return TRAIN_COMPLEXITY_PROFILES[0];
+        if (roll < 0.8) return TRAIN_COMPLEXITY_PROFILES[1];
+        return TRAIN_COMPLEXITY_PROFILES[2];
+      }
+      if (roll < 0.2) return TRAIN_COMPLEXITY_PROFILES[0];
+      if (roll < 0.55) return TRAIN_COMPLEXITY_PROFILES[1];
+      return TRAIN_COMPLEXITY_PROFILES[2];
+    }
+
+    function shuffleArray(list, rnd) {
+      const out = list.slice();
+      for (let i = out.length - 1; i > 0; i--) {
+        const j = Math.floor(rnd() * (i + 1));
+        const t = out[i];
+        out[i] = out[j];
+        out[j] = t;
+      }
+      return out;
+    }
+
+    function trainingChainsAvailable() {
+      const ids = new Set(CATALOG.map(c => c.id));
+      return TRAIN_CHAIN_LIBRARY.filter(ch => ch.components.every(cp => ids.has(cp.id)));
+    }
+
+    function targetChainCount(profile, rnd, chainPoolSize) {
+      let n = 1;
+      if (profile.id === 'klein') n = 1 + (rnd() < 0.45 ? 1 : 0); // 1-2
+      else if (profile.id === 'mittel') n = 2 + Math.floor(rnd() * 2); // 2-3
+      else n = 3 + Math.floor(rnd() * 2); // 3-4
+      return Math.max(1, Math.min(chainPoolSize, n));
+    }
+
+    function targetChainScale(profile, chain, rnd) {
+      if (profile.id === 'klein') return 1;
+      if (profile.id === 'mittel') {
+        if (chain.id === 'latium_pilei') return (rnd() < 0.45 ? 2 : 1);
+        return (rnd() < 0.35 ? 2 : 1);
+      }
+      if (chain.id === 'latium_pilei') return (rnd() < 0.55 ? 2 : 1);
+      return (rnd() < 0.6 ? 2 : 1);
+    }
+
+    function countsSignature(countMap) {
+      return CATALOG
+        .map(c => `${c.id}:${Math.max(0, Math.floor(Number(countMap?.[c.id]) || 0))}`)
+        .join('|');
+    }
+
+    function compactChainLabelText(labels, max = 3) {
+      const arr = Array.isArray(labels) ? labels.filter(Boolean) : [];
+      if (!arr.length) return '-';
+      if (arr.length <= max) return arr.join(', ');
+      return `${arr.slice(0, max).join(', ')} +${arr.length - max}`;
+    }
+
+    function addChainBundleToCounts(out, chain, mult = 1) {
+      const m = Math.max(1, Math.floor(Number(mult) || 1));
+      for (const cp of chain.components) {
+        const add = Math.max(0, Math.floor(Number(cp.ratio) || 0)) * m;
+        if (!add) continue;
+        out[cp.id] = Math.max(0, Math.floor(Number(out[cp.id]) || 0)) + add;
+      }
+    }
+
+    function buildCountsForTrainingProfile(profile, rnd, forcedChainId = null) {
+      const out = { infra_lagerhaus: 1 };
+      const pool = trainingChainsAvailable();
+      if (!pool.length) return out;
+      const chainById = new Map(pool.map(ch => [ch.id, ch]));
+      const selected = [];
+      if (forcedChainId && chainById.has(forcedChainId)) selected.push(chainById.get(forcedChainId));
+
+      const shuffled = shuffleArray(pool, rnd);
+      const desiredChains = targetChainCount(profile, rnd, pool.length);
+      for (const ch of shuffled) {
+        if (selected.length >= desiredChains) break;
+        if (selected.some(x => x.id === ch.id)) continue;
+        selected.push(ch);
+      }
+
+      const scales = {};
+      for (const ch of selected) {
+        scales[ch.id] = targetChainScale(profile, ch, rnd);
+        addChainBundleToCounts(out, ch, scales[ch.id]);
+      }
+
+      const minBuildings = Math.max(2, Math.floor(Number(profile.minBuildings) || 2));
+      const maxBuildings = Math.max(minBuildings, Math.floor(Number(profile.maxBuildings) || minBuildings));
+
+      let guard = 0;
+      let summary = summarizeCountsMap(out);
+      while (summary.buildingCount < minBuildings && guard < 60) {
+        guard++;
+        const ch = selected[Math.floor(rnd() * selected.length)];
+        if (!ch) break;
+        scales[ch.id] = Math.max(1, (scales[ch.id] || 1) + 1);
+        addChainBundleToCounts(out, ch, 1);
+        summary = summarizeCountsMap(out);
+      }
+
+      guard = 0;
+      while (summary.buildingCount > maxBuildings && guard < 120) {
+        guard++;
+        const reducible = selected.filter(ch => (scales[ch.id] || 1) > 1);
+        if (!reducible.length) break;
+        const ch = reducible[Math.floor(rnd() * reducible.length)];
+        scales[ch.id] = Math.max(1, (scales[ch.id] || 1) - 1);
+        for (const cp of ch.components) {
+          const sub = Math.max(0, Math.floor(Number(cp.ratio) || 0));
+          if (!sub) continue;
+          out[cp.id] = Math.max(0, Math.floor(Number(out[cp.id]) || 0) - sub);
+        }
+        summary = summarizeCountsMap(out);
+      }
+      return out;
+    }
+
+    function buildTrainingRunPlan(totalRuns, seed = Date.now()) {
+      const rnd = makeSeededRnd(seed >>> 0);
+      const plan = [];
+      const availableChains = trainingChainsAvailable();
+      let coverageQueue = shuffleArray(availableChains.map(ch => ch.id), rnd);
+      const seenCombos = new Set();
+      for (let i = 0; i < totalRuns; i++) {
+        const profile = pickTrainingProfile(i, totalRuns, rnd);
+        if (!coverageQueue.length) coverageQueue = shuffleArray(availableChains.map(ch => ch.id), rnd);
+        let forcedChainId = coverageQueue.shift() || null;
+        let countsForRun = buildCountsForTrainingProfile(profile, rnd, forcedChainId);
+        let sig = countsSignature(countsForRun);
+        let reroll = 0;
+        while (seenCombos.has(sig) && reroll < 8) {
+          reroll++;
+          if (!coverageQueue.length) coverageQueue = shuffleArray(availableChains.map(ch => ch.id), rnd);
+          forcedChainId = coverageQueue.shift() || forcedChainId;
+          countsForRun = buildCountsForTrainingProfile(profile, rnd, forcedChainId);
+          sig = countsSignature(countsForRun);
+        }
+        seenCombos.add(sig);
+        const summary = summarizeCountsMap(countsForRun);
+        const chainLabels = [];
+        for (const ch of availableChains) {
+          let used = true;
+          for (const cp of ch.components) {
+            if (Math.max(0, Math.floor(Number(countsForRun[cp.id]) || 0)) < Math.max(1, Math.floor(Number(cp.ratio) || 1))) { used = false; break; }
+          }
+          if (used) chainLabels.push(ch.label);
+        }
+        plan.push({
+          index: i,
+          profileId: profile.id,
+          profileLabel: profile.label,
+          counts: countsForRun,
+          buildingCount: summary.buildingCount,
+          fieldCount: summary.fieldCount,
+          chainLabels
+        });
+      }
+      return plan;
+    }
+
+    function extractPatternFromSolution(sol, runCounts = null) {
+      if (!sol || !Array.isArray(sol.items)) return null;
+      const allowedIds = patternEligibleIdSet();
+      const catalogById = new Map(CATALOG.map(c => [c.id, c]));
+      const buildings = sol.items.filter(it => it && it.kind === 'building' && allowedIds.has(String(it.id || '')));
+      if (buildings.length < 2) return null;
+      const byId = new Map();
+      for (const b of buildings) {
+        const id = String(b.id || '');
+        if (!byId.has(id)) byId.set(id, []);
+        byId.get(id).push(b);
+      }
+      const countMap = {};
+      for (const [id, arr] of byId.entries()) countMap[id] = arr.length;
+      let anchorId = 'infra_lagerhaus';
+      if (!byId.has(anchorId)) {
+        const sortedIds = [...byId.keys()].sort((a, b) => (byId.get(b)?.length || 0) - (byId.get(a)?.length || 0));
+        anchorId = sortedIds[0] || anchorId;
+      }
+      const anchor = (byId.get(anchorId) || []).slice().sort((a, b) => a.y - b.y || a.x - b.x)[0];
+      if (!anchor) return null;
+      const anchorX = Math.round(Number(anchor.x) || 0);
+      const anchorY = Math.round(Number(anchor.y) || 0);
+      const items = [];
+      for (const [id, arr] of byId.entries()) {
+        const list = arr.slice().sort((a, b) => a.y - b.y || a.x - b.x);
+        const base = catalogById.get(id);
+        for (let i = 0; i < list.length; i++) {
+          const b = list[i];
+          const rot = (base && base.w !== base.h && Number(b.w) === Number(base.h) && Number(b.h) === Number(base.w)) ? 1 : 0;
+          items.push({
+            id,
+            occ: i,
+            dx: Math.round(Number(b.x) || 0) - anchorX,
+            dy: Math.round(Number(b.y) || 0) - anchorY,
+            rot,
+            order: i
+          });
+        }
+      }
+      items.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id) || a.occ - b.occ);
+      if (items.length < 2) return null;
+      return {
+        anchorId,
+        items,
+        countMap,
+        sourceScore: Number.isFinite(Number(sol.score)) ? Number(sol.score) : null,
+        useCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    function rememberPatternFromSolution(sol, runCounts = null) {
+      const p = extractPatternFromSolution(sol, runCounts);
+      if (!p) return;
+      layoutPatternMemory = mergePatternMemoryAdditive(layoutPatternMemory, [p]);
+      saveLayoutPatternMemory();
+    }
+
+    function buildPatternSeedsForCounts(runCounts, maxSeeds = 6) {
+      if (!runCounts || typeof runCounts !== 'object') return [];
+      const allowedIds = patternEligibleIdSet();
+      const currentCountMap = {};
+      for (const c of CATALOG) {
+        if (!allowedIds.has(c.id)) continue;
+        const n = Math.max(0, Math.floor(Number(runCounts[c.id]) || 0));
+        if (n > 0) currentCountMap[c.id] = n;
+      }
+      const scored = [];
+      for (const p of layoutPatternMemory) {
+        if (!p || !Array.isArray(p.items) || p.items.length < 2) continue;
+        let overlapIds = 0;
+        let overlapUnits = 0;
+        for (const [id, n] of Object.entries(p.countMap || {})) {
+          const have = Math.max(0, Math.floor(Number(currentCountMap[id]) || 0));
+          const need = Math.max(0, Math.floor(Number(n) || 0));
+          if (have <= 0 || need <= 0) continue;
+          overlapIds++;
+          overlapUnits += Math.min(have, need);
+        }
+        if (overlapUnits < 2 || overlapIds < 1) continue;
+        const scoreBase = overlapUnits * 4 + overlapIds * 3 + Math.min(8, Math.floor(Number(p.useCount) || 0));
+        const scoreQuality = p.sourceScore == null ? 0 : Math.max(0, 2200 - Math.min(2200, Number(p.sourceScore))) / 220;
+        const score = scoreBase + scoreQuality;
+        scored.push({ p, score });
+      }
+      scored.sort((a, b) => b.score - a.score);
+      const out = [];
+      for (const s of scored) {
+        if (out.length >= maxSeeds) break;
+        const p = s.p;
+        const items = [];
+        for (const it of p.items) {
+          const have = Math.max(0, Math.floor(Number(currentCountMap[it.id]) || 0));
+          if (have <= it.occ) continue;
+          items.push({ id: it.id, occ: it.occ, dx: it.dx, dy: it.dy, rot: it.rot, order: it.order });
+        }
+        if (items.length < 2) continue;
+        out.push({ anchorId: p.anchorId, items, sourceScore: p.sourceScore == null ? null : Number(p.sourceScore), fingerprint: patternFingerprint(p) });
+      }
+      return out;
+    }
+
     function adaptiveBaseWorkers() {
       const cores = Math.max(1, Math.floor(Number(navigator.hardwareConcurrency) || 4));
       const deviceMemory = Number(navigator.deviceMemory);
@@ -750,10 +1188,18 @@
       updateTrainingSnapshotText();
     }
 
-    function optimizerWorkerCount() {
-      if (workerOverride > 0) return Math.max(1, Math.min(14, workerOverride));
+    function optimizerWorkerCount(isTrainingRun = false, workloadOverride = null) {
+      const load = workloadOverride || estimatedWorkload();
+      const simpleLayout = (load.buildingCount <= 6 && load.fieldCount <= 80);
+      const simpleCap = simpleLayout ? 8 : 14;
+      if (workerOverride > 0) {
+        let fixed = Math.max(1, Math.min(14, workerOverride));
+        if (simpleLayout && !isTrainingRun) fixed = Math.min(fixed, simpleCap);
+        if (thermalSafeMode) fixed = Math.min(fixed, isTrainingRun ? 5 : 6);
+        if (isTrainingRun) fixed = Math.min(fixed, 6);
+        return fixed;
+      }
       const base = adaptiveBaseWorkers();
-      const load = estimatedWorkload();
       const pressure = load.buildingCount + Math.floor(load.fieldCount / 45);
 
       let cap = base;
@@ -772,8 +1218,9 @@
         cap = Math.max(1, Math.min(cap, tunedTarget));
       }
 
-      if (thermalSafeMode) cap = Math.min(cap, trainingState ? 5 : 6);
-      if (trainingState) cap = Math.min(cap, 6);
+      if (simpleLayout && !isTrainingRun) cap = Math.min(cap, simpleCap);
+      if (thermalSafeMode) cap = Math.min(cap, isTrainingRun ? 5 : 6);
+      if (isTrainingRun) cap = Math.min(cap, 6);
       return Math.max(1, Math.min(14, cap));
     }
 
@@ -820,8 +1267,15 @@
           const row = document.createElement('div');
           row.className = 'row';
           const fields = c.fields ? ` | Felder ${c.fields.count} (${c.fields.unitW}x${c.fields.unitH})` : '';
+          const prodMeta = c.prodTime ? ` | ${c.prodTime}` : '';
           if ((counts[c.id] || 0) > 0) row.classList.add('has-count');
-          row.innerHTML = `<div class="row-main"><div class="swatch" style="background:${c.color};"></div><div><div class="name">${c.name}</div><div class="meta">${c.w}x${c.h}${fields}</div></div></div>`;
+          row.innerHTML = `<div class="row-main"><div class="swatch" style="background:${c.color};"></div><div><div class="name">${c.name}</div><div class="meta">${c.w}x${c.h}${fields}${prodMeta}</div></div></div>`;
+          const detailParts = [];
+          if (c.prodTime) detailParts.push(`Verarbeitungszeit ${c.prodTime}`);
+          if (c.upkeep) detailParts.push(`Unterhalt ${c.upkeep}`);
+          if (c.buildCost) detailParts.push(`Baukosten ${c.buildCost}`);
+          if (c.chainHint) detailParts.push(`Kette ${c.chainHint}`);
+          if (detailParts.length) row.title = detailParts.join(' | ');
 
           const right = document.createElement('div');
           right.className = 'counter';
@@ -1409,6 +1863,8 @@
           const radiusInner = Number(spec.radiusInner);
           const useRadius = isPigStall && Number.isFinite(radiusInner) && radiusInner > 0;
           const radiusSq = useRadius ? ((radiusInner + 0.01) * (radiusInner + 0.01)) : Infinity;
+          const firstRectMaxDist = Number(spec.firstRectMaxDist);
+          const useFirstRectMaxDist = Number.isFinite(firstRectMaxDist) && firstRectMaxDist >= 0;
           const radiusCenterOffsetX = Number(spec.radiusCenterOffsetX) || 0;
           const radiusCenterOffsetY = Number(spec.radiusCenterOffsetY) || 0;
           const radiusUseTileCenters = !!spec.radiusUseTileCenters;
@@ -1426,8 +1882,16 @@
           );
           const touchesByCornerOrEdge = (a, b) => touchesByEdge(a, b) || (spec.diagonalAllowed && touchesByCorner(a, b));
           const touchesFarmBuilding = rect => touchesByEdge(rect, { x: farm.x, y: farm.y, w: farm.w, h: farm.h });
+          const minRectGapToFarm = rect => {
+            const dx = Math.max(0, Math.max(farm.x - (rect.x + rect.w), rect.x - (farm.x + farm.w)));
+            const dy = Math.max(0, Math.max(farm.y - (rect.y + rect.h), rect.y - (farm.y + farm.h)));
+            return Math.sqrt((dx * dx) + (dy * dy));
+          };
           const rectOk = rect => {
             if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > W || rect.y + rect.h > H) return false;
+            if (useFirstRectMaxDist && placed === 0) {
+              if (minRectGapToFarm(rect) > (firstRectMaxDist + 0.01)) return false;
+            }
             if (useRadius) {
               const cx = farm.x + (farm.w / 2.0) + radiusCenterOffsetX;
               const cy = farm.y + (farm.h / 2.0) + radiusCenterOffsetY;
@@ -2285,6 +2749,52 @@
           }
           return genes;
         }
+        function genomeFromPatternSeed(patternSeed, instances, w, h, rnd) {
+          if (!patternSeed || !Array.isArray(patternSeed.items) || patternSeed.items.length < 2) return null;
+          const byId = new Map();
+          for (const inst of instances) {
+            const id = String(inst.id || '');
+            if (!byId.has(id)) byId.set(id, []);
+            byId.get(id).push(inst);
+          }
+          const baseGenome = randomGenome(instances, w, h, rnd);
+          const geneByUid = new Map(baseGenome.map(g => [g.uid, g]));
+
+          const anchorId = String(patternSeed.anchorId || 'infra_lagerhaus');
+          let anchorInst = null;
+          if (byId.has(anchorId) && byId.get(anchorId).length) anchorInst = byId.get(anchorId)[0];
+          if (!anchorInst) anchorInst = instances[0] || null;
+          if (!anchorInst) return null;
+          const anchorCanRotate = anchorInst.w !== anchorInst.h && anchorInst.id !== 'infra_lagerhaus';
+          const anchorRot = anchorCanRotate && rnd() < 0.2 ? 1 : 0;
+          const anchorW = anchorRot ? anchorInst.h : anchorInst.w;
+          const anchorH = anchorRot ? anchorInst.w : anchorInst.h;
+          const anchorX = Math.max(0, Math.min(w - anchorW, Math.round((w * 0.5) - (anchorW * 0.5) + ((rnd() - 0.5) * Math.min(8, w * 0.15)))));
+          const anchorY = Math.max(0, Math.min(h - anchorH, Math.round((h * 0.5) - (anchorH * 0.5) + ((rnd() - 0.5) * Math.min(8, h * 0.15)))));
+
+          for (const it of patternSeed.items) {
+            if (!it) continue;
+            const id = String(it.id || '');
+            const occ = Math.max(0, Math.floor(Number(it.occ) || 0));
+            const list = byId.get(id);
+            if (!list || occ >= list.length) continue;
+            const inst = list[occ];
+            const g = geneByUid.get(inst.uid);
+            if (!g) continue;
+            const canRotate = inst.w !== inst.h && inst.id !== 'infra_lagerhaus';
+            const rot = canRotate ? (Math.abs(Math.floor(Number(it.rot) || 0)) % 2) : 0;
+            const bw = rot ? inst.h : inst.w;
+            const bh = rot ? inst.w : inst.h;
+            const jitter = 1;
+            const tx = anchorX + Math.round(Number(it.dx) || 0) + Math.floor((rnd() * ((jitter * 2) + 1)) - jitter);
+            const ty = anchorY + Math.round(Number(it.dy) || 0) + Math.floor((rnd() * ((jitter * 2) + 1)) - jitter);
+            g.x = Math.max(0, Math.min(w - bw, tx));
+            g.y = Math.max(0, Math.min(h - bh, ty));
+            g.rot = rot;
+            g.order = Math.max(0, Math.floor(Number(it.order) || 0));
+          }
+          return normalizeGenome(baseGenome);
+        }
         function buildPlacedFromGenome(genome, instances, w, h) {
           const byUid = new Map(instances.map(b => [b.uid, b]));
           const genes = normalizeGenome(genome);
@@ -2424,8 +2934,22 @@
           }
           return normalizeGenome(out);
         }
-        function seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats) {
+        function seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats, patternSeeds) {
           const population = [];
+          const seededPatternList = Array.isArray(patternSeeds) ? patternSeeds : [];
+          for (let pi = 0; pi < seededPatternList.length; pi++) {
+            if (population.length >= popSize) break;
+            const patternSeed = seededPatternList[pi];
+            const triesPerPattern = 2;
+            for (let pt = 0; pt < triesPerPattern; pt++) {
+              if (population.length >= popSize) break;
+              const genome = genomeFromPatternSeed(patternSeed, instances, w, h, rnd);
+              if (!genome) continue;
+              const ev = evaluateGenome(genome, instances, w, h, 'seed_pattern');
+              if (!ev.solution) continue;
+              population.push({ genome: normalizeGenome(genome), fitness: ev.fitness, solution: ev.solution });
+            }
+          }
           const seedPerStrategy = 4;
           for (const strategy of STRATEGY_NAMES) {
             for (let i = 0; i < seedPerStrategy; i++) {
@@ -2451,9 +2975,9 @@
           }
           return population;
         }
-        function evolveForCandidate(instances, w, h, seed, strategyWeights, strategyStats, generations, popSize) {
+        function evolveForCandidate(instances, w, h, seed, strategyWeights, strategyStats, generations, popSize, patternSeeds) {
           const rnd = rng(seed >>> 0);
-          let population = seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats);
+          let population = seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats, patternSeeds);
           const eliteCount = Math.max(4, Math.floor(popSize * 0.14));
           for (let gen = 0; gen < generations; gen++) {
             if (cancelled) break;
@@ -2525,33 +3049,41 @@
         }
         function solve(payload) {
           cancelled = false;
-          const { counts, catalog, gridW, gridH, strategyWeights: inputWeights, seedSalt = 0, candidateOffset = 0, candidateStride = 1, workerId = 0, workerCount = 1, runId = 0, thermalSafe = false } = payload;
+          const { counts, catalog, gridW, gridH, strategyWeights: inputWeights, seedSalt = 0, candidateOffset = 0, candidateStride = 1, workerId = 0, workerCount = 1, runId = 0, thermalSafe = false, runMode = 'optimize', patternSeeds = [] } = payload;
           const instances = buildInstances(counts, catalog);
           if (!instances.length) { postMessage({ type: 'done', solutions: [], workerId, workerCount, runId }); return; }
           const strategyWeights = sanitizeStrategyWeights(inputWeights || {});
           const strategyStats = Object.fromEntries(STRATEGY_NAMES.map(name => [name, { attempts: 0, hits: 0, bestPads: null, avgPads: null }]));
-          const candidateLimit = thermalSafe ? 10 : 14;
-          const allCandidates = buildCandidates(instances, gridW, gridH).slice(0, candidateLimit);
-          const stride = Math.max(1, Math.floor(Number(candidateStride) || 1));
-          const offset = Math.max(0, Math.floor(Number(candidateOffset) || 0));
-          const candidates = allCandidates.filter((_, idx) => (idx % stride) === offset);
           const tileFarmCount = instances.filter(b => b.fields && (b.fields.unitW || 1) === 1 && (b.fields.unitH || 1) === 1).length;
           const rectFarmCount = instances.filter(b => b.fields && ((b.fields.unitW || 1) > 1 || (b.fields.unitH || 1) > 1)).length;
           const pigFarmCount = instances.filter(b => String(b.id || '').includes('schweinehof')).length;
           const fieldLoad = instances.reduce((s, b) => s + (b.fields ? Math.max(0, Math.floor(Number(b.fields.count) || 0)) : 0), 0);
+          const simpleWorkload = instances.length <= 6 && fieldLoad <= 80 && rectFarmCount <= 2 && tileFarmCount <= 2;
+          const quickMode = (runMode === 'optimize') && simpleWorkload;
+          const candidateLimitBase = thermalSafe ? 10 : 14;
+          const candidateLimit = quickMode ? Math.min(candidateLimitBase, 8) : candidateLimitBase;
+          const allCandidates = buildCandidates(instances, gridW, gridH).slice(0, candidateLimit);
+          const stride = Math.max(1, Math.floor(Number(candidateStride) || 1));
+          const offset = Math.max(0, Math.floor(Number(candidateOffset) || 0));
+          const candidates = allCandidates.filter((_, idx) => (idx % stride) === offset);
           const baseGenerations = Math.max(14, Math.min(34, 16 + Math.floor(tileFarmCount / 2) + Math.floor(rectFarmCount / 2) + pigFarmCount + Math.floor(fieldLoad / 220)));
-          const generations = thermalSafe ? Math.max(12, Math.floor(baseGenerations * 0.8)) : baseGenerations;
-          const popSize = thermalSafe ? 36 : 50;
+          let generations = thermalSafe ? Math.max(12, Math.floor(baseGenerations * 0.8)) : baseGenerations;
+          let popSize = thermalSafe ? 36 : 50;
+          if (quickMode) {
+            generations = Math.max(9, Math.floor(generations * 0.62));
+            popSize = Math.max(26, Math.floor(popSize * 0.68));
+          }
           const maxAttempts = candidates.length * generations;
           let tries = 0;
           const solutions = [];
           const keys = new Set();
 
+          const effectivePatternSeeds = Array.isArray(patternSeeds) ? patternSeeds.slice(0, 8) : [];
           for (const cand of candidates) {
             if (cancelled) break;
             const salt = (Number(seedSalt) || 0) >>> 0;
             const seed = ((cand.w * 73856093) ^ (cand.h * 19349663) ^ ((salt + 1) * 2654435761) ^ 911382323) >>> 0;
-            const population = evolveForCandidate(instances, cand.w, cand.h, seed, strategyWeights, strategyStats, generations, popSize);
+            const population = evolveForCandidate(instances, cand.w, cand.h, seed, strategyWeights, strategyStats, generations, popSize, effectivePatternSeeds);
             for (let i = 0; i < generations; i++) {
               tries++;
               if (tries % 2 === 0 || tries === maxAttempts) {
@@ -2649,19 +3181,22 @@
       if (msg.type === 'progress') {
         if (trainingState) {
           const cycle = trainingState.done + 1;
+          const entry = trainingState.currentEntry || null;
           const runPct = Math.max(0, Math.min(100, Math.floor(Number(msg.progress) || 0)));
           setRunProgressText(`${runPct}%`);
           const bestText = msg.best
             ? `Lauf ${cycle}/${trainingState.totalRuns} | Beste aktuell ${msg.best.bbox.w}x${msg.best.bbox.h}, Unbenutzt ${msg.best.pads || 0}`
             : `Lauf ${cycle}/${trainingState.totalRuns} | Noch kein Treffer`;
+          const loadText = entry ? ` | Komplexitaet ${entry.profileLabel} | Gebaeude ${entry.buildingCount}` : '';
+          const chainText = entry ? ` | Ketten ${compactChainLabelText(entry.chainLabels, 3)}` : '';
           const stratText = msg.topStrategy ? ` | Strategie: ${msg.topStrategy}` : '';
           const pctText = ` | Aktueller Lauf: ${runPct}%`;
           const pctBase = trainingState.done / Math.max(1, trainingState.totalRuns);
           const pctRun = (msg.progress || 0) / 100 / Math.max(1, trainingState.totalRuns);
-          setStatus(`Training laeuft...`, `${bestText}${pctText}${stratText}`, (pctBase + pctRun) * 100);
+          setStatus(`Training laeuft...`, `${bestText}${loadText}${chainText}${pctText}${stratText}`, (pctBase + pctRun) * 100);
           const elapsedSec = activeRun && activeRun.startedAt ? Math.max(0.1, (performance.now() - activeRun.startedAt) / 1000) : 0.1;
           const apsNow = Math.max(0, (Number(msg.tries) || 0) / elapsedSec);
-          setLiveTuningText(`Worker ${activeRun ? activeRun.workerCount : '-'} | Versuche ${Number(msg.tries) || 0}/${Number(msg.maxAttempts) || 0} | APS ${apsNow.toFixed(2)} | ${msg.topStrategy || 'genetic'}`);
+          setLiveTuningText(`Worker ${activeRun ? activeRun.workerCount : '-'} | Versuche ${Number(msg.tries) || 0}/${Number(msg.maxAttempts) || 0} | APS ${apsNow.toFixed(2)} | ${msg.topStrategy || 'genetic'}${entry ? ' | ' + entry.profileLabel : ''}`);
           return;
         }
         const bestText = msg.best
@@ -2732,6 +3267,8 @@
         }
 
         if (trainingState) {
+          const finishedRunNo = trainingState.done + 1;
+          const runEntry = trainingState.currentEntry || null;
           const cycleSolutions = Array.isArray(msg.solutions) ? msg.solutions : [];
           for (const sol of cycleSolutions) {
             const key = solutionLayoutKey(sol);
@@ -2741,6 +3278,14 @@
           }
           trainingState.solutions.sort((a, b) => a.score - b.score);
           if (trainingState.solutions.length > 18) trainingState.solutions.splice(18);
+          const cycleBest = cycleSolutions[0] || null;
+          if (cycleBest) {
+            rememberPatternFromSolution(cycleBest, runEntry?.counts || null);
+            activeSolutions = cycleSolutions.slice(0, 12);
+            activeIndex = 0;
+            renderSolutions();
+            drawSolution(cycleBest);
+          }
 
           trainingState.done++;
           if (cancelRequested) trainingState.cancelled = true;
@@ -2779,9 +3324,18 @@
           const totalRuns = trainingState.totalRuns;
           const waitSec = Math.max(1, Math.ceil(TRAIN_PAUSE_MS / 1000));
           terminateWorkerPool();
+          const runResultText = cycleBest
+            ? `Lauf ${finishedRunNo} fertig | ${cycleBest.bbox.w}x${cycleBest.bbox.h} | MissingFields ${cycleBest.missingFields} | Unbenutzt ${cycleBest.pads || 0}`
+            : `Lauf ${finishedRunNo} fertig | kein Treffer`;
+          const runLoadText = runEntry
+            ? ` | Komplexitaet ${runEntry.profileLabel} | Gebaeude ${runEntry.buildingCount}`
+            : '';
+          const runChainText = runEntry
+            ? ` | Ketten ${compactChainLabelText(runEntry.chainLabels, 3)}`
+            : '';
           setStatus(
             'Training Pause...',
-            `Naechster Lauf ${nextRun}/${totalRuns} startet in ${waitSec}s.`,
+            `${runResultText}${runLoadText}${runChainText} | Naechster Lauf ${nextRun}/${totalRuns} startet in ${waitSec}s.`,
             (trainingState.done / Math.max(1, totalRuns)) * 100
           );
           setRunProgressText('Pause');
@@ -2790,7 +3344,7 @@
           trainingDelayTimer = setTimeout(() => {
             trainingDelayTimer = null;
             if (!running || cancelRequested || !trainingState || trainingState.cancelled) return;
-            postOptimizeRun(nextSalt >>> 0, { softStart: true });
+            startNextTrainingRun(nextSalt >>> 0, true);
           }, TRAIN_PAUSE_MS);
           return;
         }
@@ -2826,7 +3380,24 @@
 
     function postOptimizeRun(seedSalt = 0, opts = {}) {
       clearRunStartTimers();
-      const workerCount = optimizerWorkerCount();
+      const runMode = String(opts.runMode || (trainingState ? 'training' : 'optimize'));
+      const isTrainingRun = runMode === 'training';
+      const runCounts = (opts.countsOverride && typeof opts.countsOverride === 'object') ? opts.countsOverride : counts;
+      const runLoad = summarizeCountsMap(runCounts);
+      const workerCount = optimizerWorkerCount(isTrainingRun, runLoad);
+      const patternSeeds = buildPatternSeedsForCounts(runCounts, isTrainingRun ? 6 : 4);
+      if (patternSeeds.length) {
+        const used = new Set(patternSeeds.map(s => String(s.fingerprint || '')).filter(Boolean));
+        if (used.size) {
+          for (const p of layoutPatternMemory) {
+            const fp = patternFingerprint(p);
+            if (!fp || !used.has(fp)) continue;
+            p.useCount = Math.max(0, Math.floor(Number(p.useCount) || 0) + 1);
+            p.updatedAt = new Date().toISOString();
+          }
+          saveLayoutPatternMemory();
+        }
+      }
       const softStart = !!opts.softStart;
       setLiveTuningText(softStart ? `Soft-Start mit ${workerCount} Workern...` : `Start mit ${workerCount} Workern...`, true);
       const runId = ++runSerial;
@@ -2844,7 +3415,7 @@
           w.postMessage({
             type: 'optimize',
             payload: {
-              counts,
+              counts: { ...runCounts },
               catalog: CATALOG,
               gridW: GRID_W,
               gridH: GRID_H,
@@ -2855,7 +3426,9 @@
               workerId: i,
               workerCount,
               runId,
-              thermalSafe: thermalSafeMode
+              thermalSafe: thermalSafeMode,
+              runMode,
+              patternSeeds
             }
           });
         };
@@ -2872,14 +3445,30 @@
       });
     }
 
+    function startNextTrainingRun(seedSalt, softStart = false) {
+      if (!trainingState) return;
+      const runIndex = Math.max(0, Math.floor(Number(trainingState.done) || 0));
+      const totalRuns = Math.max(1, Math.floor(Number(trainingState.totalRuns) || 1));
+      const entry = trainingState.plan?.[runIndex] || null;
+      if (!entry) return;
+      trainingState.currentEntry = entry;
+      const runNo = runIndex + 1;
+      const basePct = (runIndex / totalRuns) * 100;
+      const chainText = compactChainLabelText(entry.chainLabels, 3);
+      setStatus(
+        `Training Lauf ${runNo}/${totalRuns} startet...`,
+        `Komplexitaet ${entry.profileLabel} | Gebaeude ${entry.buildingCount} | Felder ${entry.fieldCount} | Ketten ${chainText}`,
+        basePct
+      );
+      setRunProgressText('0%');
+      setLiveTuningText(`Lauf ${runNo}/${totalRuns} | ${entry.profileLabel} | Gebaeude ${entry.buildingCount} | Ketten ${chainText}`, true);
+      postOptimizeRun(seedSalt, { softStart, runMode: 'training', countsOverride: entry.counts });
+    }
+
     function startTraining() {
       if (running) return;
       clearTrainingDelayTimer();
       clearRunStartTimers();
-      if (totalSelected() === 0) {
-        setStatus('Bitte mindestens ein Gebaeude waehlen.', 'Links die Mengen mit + setzen.', 0);
-        return;
-      }
       const raw = window.prompt('Wie viele Trainingslaeufe?', String(TRAIN_DEFAULT_RUNS));
       if (raw == null) return;
       const runs = Math.max(1, Math.min(TRAIN_MAX_RUNS, Math.floor(Number(raw) || 0)));
@@ -2894,16 +3483,19 @@
         solutions: [],
         solutionKeys: new Set()
       };
+      const planSeed = (Date.now() ^ 0x7f4a7c15) >>> 0;
+      trainingState.plan = buildTrainingRunPlan(runs, planSeed);
+      trainingState.currentEntry = trainingState.plan[0] || null;
       activeSolutions = [];
       activeIndex = -1;
       renderSolutions();
       drawSolution(null);
       setRunUi(true);
-      setStatus('Training startet...', `0/${runs} Laeufe`, 0);
+      setStatus('Training startet...', `0/${runs} Laeufe | Aufgabenplan wird erzeugt...`, 0);
       setRunProgressText('0%');
       setLiveTuningText('Training initialisiert...', true);
       const seedSalt = (Date.now() ^ 0x9e3779b9) >>> 0;
-      postOptimizeRun(seedSalt);
+      startNextTrainingRun(seedSalt, false);
     }
 
     function drawSolution(sol) {
@@ -3045,7 +3637,7 @@
       setRunProgressText('0%');
       setLiveTuningText('Optimierung initialisiert...', true);
       setRunUi(true);
-      postOptimizeRun((Date.now() & 0xffff) >>> 0);
+      postOptimizeRun((Date.now() & 0xffff) >>> 0, { runMode: 'optimize' });
     }
 
     function cancelOptimize() {
