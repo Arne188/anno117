@@ -639,13 +639,42 @@
         merged.updatedAt = (String(prev.updatedAt) > String(p.updatedAt)) ? String(prev.updatedAt) : String(p.updatedAt);
         byFp.set(fp, merged);
       }
-      const out = [...byFp.values()];
-      out.sort((a, b) => {
-        const sa = a.sourceScore == null ? 9e9 : Number(a.sourceScore);
-        const sb = b.sourceScore == null ? 9e9 : Number(b.sourceScore);
-        if (sa !== sb) return sa - sb;
-        return (Number(b.useCount) || 0) - (Number(a.useCount) || 0);
-      });
+      const outRaw = [...byFp.values()];
+      const spanOfPattern = p => {
+        if (!p || !Array.isArray(p.items) || !p.items.length) return 0;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const it of p.items) {
+          const x = Number(it.dx) || 0;
+          const y = Number(it.dy) || 0;
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        }
+        return (maxX - minX) + (maxY - minY);
+      };
+      const isWeakPattern = p => {
+        const score = p.sourceScore == null ? 9e9 : Number(p.sourceScore);
+        const use = Math.max(0, Math.floor(Number(p.useCount) || 0));
+        const itemCount = Array.isArray(p.items) ? p.items.length : 0;
+        const span = spanOfPattern(p);
+        if (itemCount < 2) return true;
+        if (score > 950 && use < 12) return true;
+        if (score > 700 && use < 6) return true;
+        if (score > 520 && use < 3) return true;
+        if (score > 380 && use === 0) return true;
+        if (span > 70 && use < 8) return true;
+        return false;
+      };
+      const out = outRaw.filter(p => !isWeakPattern(p));
+      const utility = p => {
+        const score = p.sourceScore == null ? 9e9 : Number(p.sourceScore);
+        const use = Math.max(0, Math.floor(Number(p.useCount) || 0));
+        const qualityPart = Math.max(0, 2200 - Math.min(2200, score)) / 220;
+        const usePart = Math.log2(1 + use) * 4.2;
+        return qualityPart + usePart;
+      };
+      out.sort((a, b) => utility(b) - utility(a));
       if (out.length > 64) out.splice(64);
       return out;
     }
@@ -1188,7 +1217,7 @@
       updateTrainingSnapshotText();
     }
 
-    function optimizerWorkerCount(isTrainingRun = false, workloadOverride = null) {
+    function optimizerWorkerCount(isTrainingRun = false, workloadOverride = null, trainingProfileId = '') {
       const load = workloadOverride || estimatedWorkload();
       const simpleLayout = (load.buildingCount <= 6 && load.fieldCount <= 80);
       const simpleCap = simpleLayout ? 8 : 14;
@@ -1196,10 +1225,10 @@
         let fixed = Math.max(1, Math.min(14, workerOverride));
         if (simpleLayout && !isTrainingRun) fixed = Math.min(fixed, simpleCap);
         if (thermalSafeMode) fixed = Math.min(fixed, isTrainingRun ? 5 : 6);
-        if (isTrainingRun) fixed = Math.min(fixed, 6);
         return fixed;
       }
       const base = adaptiveBaseWorkers();
+      const hwCap = Math.max(1, Math.min(14, Math.floor(Number(navigator.hardwareConcurrency) || 4)));
       const pressure = load.buildingCount + Math.floor(load.fieldCount / 45);
 
       let cap = base;
@@ -1219,8 +1248,14 @@
       }
 
       if (simpleLayout && !isTrainingRun) cap = Math.min(cap, simpleCap);
+      if (isTrainingRun) {
+        const isComplexProfile = String(trainingProfileId || '') === 'komplex';
+        const trainMax = isComplexProfile ? 9 : 8;
+        const trainMin = isComplexProfile ? 6 : 4;
+        cap = Math.min(cap, Math.min(hwCap, trainMax));
+        cap = Math.max(Math.min(hwCap, trainMin), cap);
+      }
       if (thermalSafeMode) cap = Math.min(cap, isTrainingRun ? 5 : 6);
-      if (isTrainingRun) cap = Math.min(cap, 6);
       return Math.max(1, Math.min(14, cap));
     }
 
@@ -1372,8 +1407,19 @@
           'row_width_gap0',
           'row_area_gap1',
           'col_area_gap0',
+          'col_height_gap0',
+          'col_width_gap0',
           'row_square_gap0',
-          'row_processing_gap1'
+          'row_processing_gap1',
+          'row_chain_gap0',
+          'row_chain_gap1',
+          'col_chain_gap0',
+          'row_perimeter_gap0',
+          'row_fieldheavy_gap1',
+          'island_chain_cluster',
+          'radial_hub_spoke',
+          'roadtree_compact',
+          'local_repair_seed'
         ];
 
         function clamp(v, lo, hi) {
@@ -1400,18 +1446,167 @@
           return list[list.length - 1].name;
         }
 
+        function weightedPickStrategyWithContext(weights, contextMul, rnd) {
+          const list = STRATEGY_NAMES.map(name => {
+            const base = Math.max(0.001, Number(weights[name]) || 0.001);
+            const mul = Math.max(0.25, Math.min(2.4, Number(contextMul && contextMul[name]) || 1));
+            return { name, w: base * mul };
+          });
+          const sum = list.reduce((s, x) => s + x.w, 0);
+          let r = rnd() * sum;
+          for (const entry of list) {
+            r -= entry.w;
+            if (r <= 0) return entry.name;
+          }
+          return list[list.length - 1].name;
+        }
+
+        function buildLayoutContext(instances) {
+          const ctx = {
+            total: instances.length,
+            tileFarms: 0,
+            rectFarms: 0,
+            pigs: 0,
+            sheep: 0,
+            chainPieces: 0,
+            chainVariety: 0,
+            processors: 0,
+            wide: 0,
+            tall: 0
+          };
+          const chainIds = new Set();
+          for (const b of instances) {
+            const id = String(b.id || '');
+            if (!b.fields) ctx.processors++;
+            if (b.fields) {
+              const fw = b.fields.unitW || 1;
+              const fh = b.fields.unitH || 1;
+              if (fw === 1 && fh === 1) ctx.tileFarms++;
+              else ctx.rectFarms++;
+            }
+            if (id.includes('schweinehof')) ctx.pigs++;
+            if (id.includes('schafshof')) ctx.sheep++;
+            if (b.w > b.h) ctx.wide++;
+            else if (b.h > b.w) ctx.tall++;
+            if (id.startsWith('need_')) {
+              ctx.chainPieces++;
+              const parts = id.split('_');
+              if (parts.length >= 3) chainIds.add(parts[1]);
+            }
+          }
+          ctx.chainVariety = chainIds.size;
+          ctx.avgArea = ctx.total ? instances.reduce((s, b) => s + ((b.w || 1) * (b.h || 1)), 0) / ctx.total : 0;
+          ctx.isMixed = ctx.chainVariety >= 3;
+          ctx.isFarmHeavy = (ctx.tileFarms + ctx.rectFarms) >= Math.max(2, Math.floor(ctx.total * 0.45));
+          ctx.hasLargeFootprints = instances.some(b => ((b.w || 1) * (b.h || 1)) >= Math.max(20, ctx.avgArea * 1.4));
+          return ctx;
+        }
+
+        function buildStrategyContextMultipliers(ctx) {
+          const mul = Object.fromEntries(STRATEGY_NAMES.map(name => [name, 1]));
+          const add = (name, delta) => { mul[name] = clamp((mul[name] || 1) + delta, 0.45, 1.9); };
+          const setMin = (name, floor) => { mul[name] = Math.max(Number(floor) || 1, mul[name] || 1); };
+
+          if (ctx.rectFarms > 0 || ctx.pigs > 0 || ctx.sheep > 0) {
+            add('row_chain_gap1', 0.36);
+            add('row_processing_gap1', 0.28);
+            add('row_chain_gap0', 0.14);
+            add('col_chain_gap0', 0.12);
+            add('row_fieldheavy_gap1', 0.26);
+            add('island_chain_cluster', 0.2);
+            add('radial_hub_spoke', 0.22);
+            add('roadtree_compact', 0.18);
+            add('local_repair_seed', 0.1);
+          }
+          if (ctx.tileFarms >= 2) {
+            add('row_area_gap1', 0.22);
+            add('row_area_gap0', 0.16);
+            add('col_area_gap0', 0.22);
+            add('row_fieldheavy_gap1', 0.14);
+            add('radial_hub_spoke', 0.18);
+          }
+          if (ctx.isMixed) {
+            add('row_chain_gap1', 0.2);
+            add('col_chain_gap0', 0.2);
+            add('row_perimeter_gap0', 0.15);
+            add('row_square_gap0', 0.08);
+            add('island_chain_cluster', 0.26);
+            add('roadtree_compact', 0.2);
+            add('local_repair_seed', 0.16);
+          }
+          if (ctx.hasLargeFootprints) {
+            add('row_perimeter_gap0', 0.24);
+            add('row_area_gap0', 0.12);
+            add('col_area_gap0', 0.1);
+          }
+          if (ctx.wide > ctx.tall + 1) {
+            add('row_width_gap0', 0.24);
+            add('col_height_gap0', 0.12);
+          } else if (ctx.tall > ctx.wide + 1) {
+            add('row_height_gap0', 0.24);
+            add('col_width_gap0', 0.12);
+          }
+          if (ctx.processors >= Math.max(2, Math.floor(ctx.total * 0.5))) {
+            add('row_area_gap0', 0.16);
+            add('col_area_gap0', 0.14);
+            add('row_square_gap0', 0.12);
+            add('roadtree_compact', 0.16);
+          }
+          if (!ctx.isFarmHeavy) {
+            add('row_fieldheavy_gap1', -0.2);
+          }
+          if (ctx.chainVariety <= 1) {
+            add('row_chain_gap1', -0.16);
+            add('col_chain_gap0', -0.12);
+          }
+
+          // Never disable a strategy completely; keep exploration alive.
+          for (const name of STRATEGY_NAMES) setMin(name, 0.5);
+          return mul;
+        }
+
+        function chainPriorityScore(b) {
+          if (b.id === 'infra_lagerhaus') return 10000;
+          if (b.id && b.id.includes('schafshof')) return 9200;
+          if (b.id && b.id.includes('pileusfilzer')) return 9100;
+          if (b.id && b.id.includes('schweinehof')) return 9000;
+          if (b.id && b.id.includes('gerberei')) return 8700;
+          if (b.id && b.id.includes('sandalenmacher')) return 8600;
+          if (b.id && b.id.includes('weizenhof')) return 8450;
+          if (b.id && b.id.includes('baeckerei')) return 8425;
+          if (b.id && b.id.includes('haferhof')) return 8400;
+          if (b.id && b.id.includes('garkueche')) return 8375;
+          if (b.id && b.id.includes('hanfhof')) return 8350;
+          if (b.id && b.id.includes('spinnerei')) return 8325;
+          if (b.id && b.id.includes('schilfsammler')) return 8300;
+          if (b.id && b.id.includes('schuhweber')) return 8275;
+          if (b.fields && b.fields.id === 'field_pigstall') return 8500;
+          return (b.w * b.h);
+        }
+
         function sortForStrategy(buildings, strategy, rnd) {
           const copy = buildings.map(b => ({ ...b, jitter: rnd() }));
-          if (strategy === 'row_processing_gap1') {
-            const prio = b => {
-              if (b.id === 'infra_lagerhaus') return 10000;
-              if (b.id && b.id.includes('schweinehof')) return 9000;
-              if (b.id && b.id.includes('gerberei')) return 8700;
-              if (b.id && b.id.includes('sandalenmacher')) return 8600;
-              if (b.fields && b.fields.id === 'field_pigstall') return 8500;
-              return (b.w * b.h);
-            };
-            copy.sort((a, b) => prio(b) - prio(a) || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
+          if (
+            strategy === 'row_processing_gap1' ||
+            strategy === 'row_chain_gap0' ||
+            strategy === 'row_chain_gap1' ||
+            strategy === 'col_chain_gap0' ||
+            strategy === 'island_chain_cluster' ||
+            strategy === 'radial_hub_spoke' ||
+            strategy === 'roadtree_compact' ||
+            strategy === 'local_repair_seed'
+          ) {
+            copy.sort((a, b) => chainPriorityScore(b) - chainPriorityScore(a) || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
+            return copy;
+          }
+          if (strategy === 'row_fieldheavy_gap1') {
+            const f = b => (b.fields ? 5000 : 0) + ((b.fields ? (Number(b.fields.count) || 0) : 0) * 2) + (b.w * b.h);
+            copy.sort((a, b) => f(b) - f(a) || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
+            return copy;
+          }
+          if (strategy === 'row_perimeter_gap0') {
+            const per = b => ((b.w * 2) + (b.h * 2));
+            copy.sort((a, b) => per(b) - per(a) || Math.abs(b.w - b.h) - Math.abs(a.w - a.h) || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
             return copy;
           }
           if (strategy === 'row_height_gap0') {
@@ -1419,6 +1614,14 @@
             return copy;
           }
           if (strategy === 'row_width_gap0') {
+            copy.sort((a, b) => b.w - a.w || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
+            return copy;
+          }
+          if (strategy === 'col_height_gap0') {
+            copy.sort((a, b) => b.h - a.h || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
+            return copy;
+          }
+          if (strategy === 'col_width_gap0') {
             copy.sort((a, b) => b.w - a.w || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
             return copy;
           }
@@ -1505,11 +1708,182 @@
           return placed;
         }
 
+        function chainGroupKey(building) {
+          const id = String(building && building.id || '');
+          if (id === 'infra_lagerhaus') return 'infra';
+          if (!id.startsWith('need_')) return 'misc';
+          const parts = id.split('_');
+          return parts.length >= 3 ? parts[1] : 'misc';
+        }
+
+        function placeNear(occ, bw, bh, sx, sy, minX, minY, maxX, maxY, maxRadius = 10) {
+          const can = (x, y) => {
+            if (x < minX || y < minY || x + bw > maxX || y + bh > maxY) return false;
+            for (let yy = y; yy < y + bh; yy++) for (let xx = x; xx < x + bw; xx++) if (occ[xx][yy]) return false;
+            return true;
+          };
+          const px = Math.max(minX, Math.min(maxX - bw, Math.round(sx)));
+          const py = Math.max(minY, Math.min(maxY - bh, Math.round(sy)));
+          if (can(px, py)) return { x: px, y: py };
+          for (let r = 1; r <= maxRadius; r++) {
+            for (let dy = -r; dy <= r; dy++) {
+              for (let dx = -r; dx <= r; dx++) {
+                if (Math.abs(dx) + Math.abs(dy) !== r) continue;
+                const x = px + dx;
+                const y = py + dy;
+                if (can(x, y)) return { x, y };
+              }
+            }
+          }
+          return null;
+        }
+
+        function paintOcc(occ, x, y, bw, bh) {
+          for (let yy = y; yy < y + bh; yy++) for (let xx = x; xx < x + bw; xx++) occ[xx][yy] = true;
+        }
+
+        function packChainIslands(buildings, w, h, rnd) {
+          const innerW = w - 2, innerH = h - 2;
+          if (innerW < 8 || innerH < 8) return null;
+          const minX = 1, minY = 1, maxX = w - 1, maxY = h - 1;
+          const occ = Array.from({ length: w }, () => Array(h).fill(false));
+          const placed = [];
+
+          const warehouse = buildings.find(b => b.id === 'infra_lagerhaus') || buildings[0];
+          if (!warehouse) return null;
+          const whVar = buildingVariants(warehouse)[0];
+          const whPos = placeNear(occ, whVar.w, whVar.h, Math.floor((w - whVar.w) / 2), Math.floor((h - whVar.h) / 2), minX, minY, maxX, maxY, 18);
+          if (!whPos) return null;
+          paintOcc(occ, whPos.x, whPos.y, whVar.w, whVar.h);
+          placed.push({ ...warehouse, w: whVar.w, h: whVar.h, x: whPos.x, y: whPos.y });
+
+          const groups = new Map();
+          for (const b of buildings) {
+            if (b.uid === warehouse.uid) continue;
+            const gk = chainGroupKey(b);
+            if (!groups.has(gk)) groups.set(gk, []);
+            groups.get(gk).push(b);
+          }
+          const groupList = [...groups.entries()].map(([k, list]) => ({ k, list })).sort((a, b) => b.list.length - a.list.length || a.k.localeCompare(b.k));
+          const cx = whPos.x + Math.floor(whVar.w / 2);
+          const cy = whPos.y + Math.floor(whVar.h / 2);
+          const anchors = [
+            { x: cx + 8, y: cy }, { x: cx - 8, y: cy }, { x: cx, y: cy + 8 }, { x: cx, y: cy - 8 },
+            { x: cx + 11, y: cy + 6 }, { x: cx - 11, y: cy + 6 }, { x: cx + 11, y: cy - 6 }, { x: cx - 11, y: cy - 6 },
+            { x: cx + 5, y: cy + 12 }, { x: cx - 5, y: cy + 12 }, { x: cx + 5, y: cy - 12 }, { x: cx - 5, y: cy - 12 }
+          ];
+
+          let gi = 0;
+          for (const g of groupList) {
+            const anchor = anchors[gi % anchors.length];
+            gi++;
+            const chainOrdered = g.list.slice().sort((a, b) => chainPriorityScore(b) - chainPriorityScore(a) || (b.w * b.h) - (a.w * a.h));
+            for (let i = 0; i < chainOrdered.length; i++) {
+              const b = chainOrdered[i];
+              const variants = buildingVariants(b);
+              let best = null;
+              let bestDist = Infinity;
+              for (const v of variants) {
+                const tx = anchor.x + ((i % 3) - 1) * 4 + Math.floor((rnd() * 3) - 1);
+                const ty = anchor.y + (Math.floor(i / 3) - 1) * 4 + Math.floor((rnd() * 3) - 1);
+                const pos = placeNear(occ, v.w, v.h, tx, ty, minX, minY, maxX, maxY, 12);
+                if (!pos) continue;
+                const dc = Math.abs((pos.x + Math.floor(v.w / 2)) - anchor.x) + Math.abs((pos.y + Math.floor(v.h / 2)) - anchor.y);
+                if (dc < bestDist) {
+                  bestDist = dc;
+                  best = { v, pos };
+                }
+              }
+              if (!best) return null;
+              paintOcc(occ, best.pos.x, best.pos.y, best.v.w, best.v.h);
+              placed.push({ ...b, w: best.v.w, h: best.v.h, x: best.pos.x, y: best.pos.y });
+            }
+          }
+          return placed.length === buildings.length ? placed : null;
+        }
+
+        function radialTargetForBuilding(b, baseRing) {
+          if (b.id === 'infra_lagerhaus') return 0;
+          const id = String(b.id || '');
+          if (id.includes('gerberei') || id.includes('sandalenmacher') || id.includes('pileusfilzer') || id.includes('spinnerei') || id.includes('schuhweber') || id.includes('garkueche') || id.includes('baeckerei')) return Math.max(3, baseRing + 1);
+          if (b.fields) {
+            const fw = b.fields.unitW || 1;
+            const fh = b.fields.unitH || 1;
+            if (fw === 1 && fh === 1) return baseRing + 8;
+            return baseRing + 5;
+          }
+          return baseRing + 4;
+        }
+
+        function packRadialHubSpoke(buildings, w, h, rnd, compact = false) {
+          const innerW = w - 2, innerH = h - 2;
+          if (innerW < 8 || innerH < 8) return null;
+          const minX = 1, minY = 1, maxX = w - 1, maxY = h - 1;
+          const occ = Array.from({ length: w }, () => Array(h).fill(false));
+          const placed = [];
+
+          const warehouse = buildings.find(b => b.id === 'infra_lagerhaus') || buildings[0];
+          if (!warehouse) return null;
+          const whVar = buildingVariants(warehouse)[0];
+          const whPos = placeNear(occ, whVar.w, whVar.h, Math.floor((w - whVar.w) / 2), Math.floor((h - whVar.h) / 2), minX, minY, maxX, maxY, 18);
+          if (!whPos) return null;
+          paintOcc(occ, whPos.x, whPos.y, whVar.w, whVar.h);
+          placed.push({ ...warehouse, w: whVar.w, h: whVar.h, x: whPos.x, y: whPos.y });
+          const cx = whPos.x + Math.floor(whVar.w / 2);
+          const cy = whPos.y + Math.floor(whVar.h / 2);
+
+          const rest = buildings.filter(b => b.uid !== warehouse.uid).slice()
+            .sort((a, b) => chainPriorityScore(b) - chainPriorityScore(a) || (b.w * b.h) - (a.w * a.h));
+          const ringBase = compact ? 3 : 4;
+          for (let i = 0; i < rest.length; i++) {
+            const b = rest[i];
+            const variants = buildingVariants(b);
+            let best = null;
+            let bestCost = Infinity;
+            const targetR = radialTargetForBuilding(b, ringBase) + (compact ? -1 : 0);
+            for (const v of variants) {
+              const points = 16 + (compact ? 4 : 0);
+              for (let k = 0; k < points; k++) {
+                const t = ((Math.PI * 2) * k / points) + (i * 0.17);
+                const tx = Math.round(cx + Math.cos(t) * targetR + (rnd() < 0.2 ? (rnd() * 2 - 1) : 0));
+                const ty = Math.round(cy + Math.sin(t) * targetR + (rnd() < 0.2 ? (rnd() * 2 - 1) : 0));
+                const pos = placeNear(occ, v.w, v.h, tx, ty, minX, minY, maxX, maxY, compact ? 8 : 10);
+                if (!pos) continue;
+                const pcx = pos.x + Math.floor(v.w / 2);
+                const pcy = pos.y + Math.floor(v.h / 2);
+                const rr = Math.abs(pcx - cx) + Math.abs(pcy - cy);
+                const radialError = Math.abs(rr - targetR);
+                const compactPenalty = compact ? rr * 0.6 : rr * 0.25;
+                const cost = radialError * 1.6 + compactPenalty;
+                if (cost < bestCost) {
+                  bestCost = cost;
+                  best = { v, pos };
+                }
+              }
+            }
+            if (!best) return null;
+            paintOcc(occ, best.pos.x, best.pos.y, best.v.w, best.v.h);
+            placed.push({ ...b, w: best.v.w, h: best.v.h, x: best.pos.x, y: best.pos.y });
+          }
+          return placed.length === buildings.length ? placed : null;
+        }
+
         function packWithStrategy(buildings, w, h, rnd, strategy) {
           const ordered = sortForStrategy(buildings, strategy, rnd);
+          if (strategy === 'local_repair_seed') return packChainIslands(ordered, w, h, rnd) || packRadialHubSpoke(ordered, w, h, rnd, true);
+          if (strategy === 'island_chain_cluster') return packChainIslands(ordered, w, h, rnd);
+          if (strategy === 'radial_hub_spoke') return packRadialHubSpoke(ordered, w, h, rnd, false);
+          if (strategy === 'roadtree_compact') return packRadialHubSpoke(ordered, w, h, rnd, true);
           if (strategy === 'row_processing_gap1') return packRowsGeneric(ordered, w, h, 1);
+          if (strategy === 'row_chain_gap1') return packRowsGeneric(ordered, w, h, 1);
+          if (strategy === 'row_chain_gap0') return packRowsGeneric(ordered, w, h, 0);
+          if (strategy === 'col_chain_gap0') return packColsGeneric(ordered, w, h, 0);
+          if (strategy === 'row_perimeter_gap0') return packRowsGeneric(ordered, w, h, 0);
+          if (strategy === 'row_fieldheavy_gap1') return packRowsGeneric(ordered, w, h, 1);
           if (strategy === 'row_area_gap1') return packRowsGeneric(ordered, w, h, 1);
           if (strategy === 'col_area_gap0') return packColsGeneric(ordered, w, h, 0);
+          if (strategy === 'col_height_gap0') return packColsGeneric(ordered, w, h, 0);
+          if (strategy === 'col_width_gap0') return packColsGeneric(ordered, w, h, 0);
           return packRowsGeneric(ordered, w, h, 0);
         }
         function findAdjAnchor(building, blocked, roadSet) {
@@ -2137,6 +2511,27 @@
           }
           return true;
         }
+        function validateRoadOuterEdgeConnection(buildings, roads, fields) {
+          if (!Array.isArray(roads) || !roads.length) return false;
+          const core = []
+            .concat(Array.isArray(buildings) ? buildings : [])
+            .concat(Array.isArray(fields) ? fields : [])
+            .concat(roads);
+          const bb = boundingBox(core);
+          if (!bb) return false;
+          const minX = bb.minX;
+          const minY = bb.minY;
+          const maxX = bb.maxX - 1;
+          const maxY = bb.maxY - 1;
+          for (const r of roads) {
+            const rx0 = r.x;
+            const ry0 = r.y;
+            const rx1 = r.x + r.w - 1;
+            const ry1 = r.y + r.h - 1;
+            if (rx0 <= minX || ry0 <= minY || rx1 >= maxX || ry1 >= maxY) return true;
+          }
+          return false;
+        }
         function orderFarmsForMode(farms, orderMode = 'desc_need', rnd = null) {
           let out = farms.slice();
           if (orderMode === 'desc_need') out.sort((a, b) => (Number(b.fields?.count) || 0) - (Number(a.fields?.count) || 0));
@@ -2644,12 +3039,17 @@
 
           const aspect = Math.max(bb.w / Math.max(1, bb.h), bb.h / Math.max(1, bb.w));
           const aspectPenalty = Math.max(0, aspect - 1.45) * 50;
+          const roadPerBuilding = roads / Math.max(1, buildings.length);
+          const roadCoverage = roads / Math.max(1, bb.area);
 
           let score = 0;
           score -= pigFull * 100;
           score += pigUnder * 50;
           score += unused * 5;
-          score += roads * 2;
+          // Prefer compact street-light layouts while keeping feasibility constraints intact.
+          score += roads * 3.8;
+          score += Math.max(0, roadPerBuilding - 1.8) * 35;
+          score += roadCoverage * 180;
           score += pigNoWarehouseReach * 20;
           score += hardPocketPenalty * 10;
           score -= Math.min(4, repeatableModule) * 10;
@@ -2692,6 +3092,7 @@
             if (!fieldRes || fieldRes.missing > 0) continue;
             if (!validateFarmFieldConnectivity(buildings, fieldRes.fields)) continue;
             if (!validateRoadConnectivity(buildings, roads)) continue;
+            if (!validateRoadOuterEdgeConnection(buildings, roads, fieldRes.fields)) continue;
             const core = buildings.concat(roads, fieldRes.fields);
             const pads = fillPads(core);
             const all = compactShift(core.concat(pads));
@@ -2872,6 +3273,70 @@
           if (!sol) return { fitness: 9e9, solution: null };
           return { fitness: sol.score, solution: sol };
         }
+        function localRepairGenome(genome, instances, w, h, label, rnd, maxSteps = 10) {
+          let bestGenome = normalizeGenome(cloneGenome(genome));
+          let bestEval = evaluateGenome(bestGenome, instances, w, h, label + '_base');
+          if (!bestEval || !bestEval.solution) return bestGenome;
+          const uidMap = new Map(instances.map(b => [b.uid, b]));
+          const moves = [
+            { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
+            { x: 2, y: 0 }, { x: -2, y: 0 }, { x: 0, y: 2 }, { x: 0, y: -2 }
+          ];
+          for (let step = 0; step < maxSteps; step++) {
+            const cand = cloneGenome(bestGenome);
+            const gi = Math.floor(rnd() * cand.length);
+            const g = cand[gi];
+            if (!g) continue;
+            const base = uidMap.get(g.uid);
+            if (!base) continue;
+            let improved = false;
+            let bestLocalGenome = bestGenome;
+            let bestLocalEval = bestEval;
+
+            const tryCandidate = testGenome => {
+              const ev = evaluateGenome(testGenome, instances, w, h, label + '_lr');
+              if (ev.solution && ev.fitness + 1e-6 < bestLocalEval.fitness) {
+                bestLocalEval = ev;
+                bestLocalGenome = normalizeGenome(testGenome);
+                improved = true;
+              }
+            };
+
+            for (const mv of moves) {
+              const t = cloneGenome(cand);
+              const tg = t[gi];
+              tg.x += mv.x;
+              tg.y += mv.y;
+              const canRotate = base.w !== base.h && base.id !== 'infra_lagerhaus';
+              const bw = (canRotate && (tg.rot % 2)) ? base.h : base.w;
+              const bh = (canRotate && (tg.rot % 2)) ? base.w : base.h;
+              tg.x = Math.max(0, Math.min(w - bw, Math.round(tg.x)));
+              tg.y = Math.max(0, Math.min(h - bh, Math.round(tg.y)));
+              tryCandidate(t);
+            }
+            if (base.w !== base.h && base.id !== 'infra_lagerhaus' && rnd() < 0.85) {
+              const t = cloneGenome(cand);
+              t[gi].rot = (t[gi].rot + 1) % 2;
+              tryCandidate(t);
+            }
+            if (cand.length >= 2 && rnd() < 0.75) {
+              const j = Math.floor(rnd() * cand.length);
+              if (j !== gi) {
+                const t = cloneGenome(cand);
+                const tmp = t[gi].order;
+                t[gi].order = t[j].order;
+                t[j].order = tmp;
+                tryCandidate(t);
+              }
+            }
+
+            if (improved) {
+              bestGenome = bestLocalGenome;
+              bestEval = bestLocalEval;
+            }
+          }
+          return bestGenome;
+        }
         function tournamentPick(population, rnd, k = 4) {
           let best = null;
           const bound = Math.max(1, Math.floor(population.length * 0.75));
@@ -2934,8 +3399,11 @@
           }
           return normalizeGenome(out);
         }
-        function seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats, patternSeeds) {
+        function seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats, patternSeeds, strategyContextMul) {
           const population = [];
+          const contextMul = strategyContextMul && typeof strategyContextMul === 'object'
+            ? strategyContextMul
+            : Object.fromEntries(STRATEGY_NAMES.map(name => [name, 1]));
           const seededPatternList = Array.isArray(patternSeeds) ? patternSeeds : [];
           for (let pi = 0; pi < seededPatternList.length; pi++) {
             if (population.length >= popSize) break;
@@ -2950,23 +3418,55 @@
               population.push({ genome: normalizeGenome(genome), fitness: ev.fitness, solution: ev.solution });
             }
           }
-          const seedPerStrategy = 4;
-          for (const strategy of STRATEGY_NAMES) {
-            for (let i = 0; i < seedPerStrategy; i++) {
-              if (population.length >= popSize) break;
-              strategyStats[strategy].attempts++;
-              const placed = packWithStrategy(instances, w, h, rnd, strategy);
-              if (!placed) continue;
-              const genome = genomeFromBuildings(instances, placed, rnd);
-              const ev = evaluateGenome(genome, instances, w, h, 'seed_' + strategy);
-              if (!ev.solution) continue;
-              strategyStats[strategy].hits++;
-              strategyStats[strategy].bestPads = strategyStats[strategy].bestPads == null ? ev.solution.pads : Math.min(strategyStats[strategy].bestPads, ev.solution.pads);
-              strategyStats[strategy].avgPads = strategyStats[strategy].avgPads == null ? ev.solution.pads : (strategyStats[strategy].avgPads * 0.82 + ev.solution.pads * 0.18);
-              const quality = 1 / (1 + (ev.solution.pads || 0) + (ev.solution.missingFields || 0) * 60);
-              strategyWeights[strategy] = clamp((strategyWeights[strategy] * 0.96) + (quality * 14), 0.15, 8);
-              population.push({ genome: normalizeGenome(genome), fitness: ev.fitness, solution: ev.solution });
+          const addStrategySeed = strategy => {
+            strategyStats[strategy].attempts++;
+            let strategyBase = strategy;
+            if (strategy === 'local_repair_seed') {
+              const basePool = ['island_chain_cluster', 'radial_hub_spoke', 'roadtree_compact', 'row_chain_gap1'];
+              strategyBase = basePool[Math.floor(rnd() * basePool.length)];
             }
+            const placed = packWithStrategy(instances, w, h, rnd, strategyBase);
+            if (!placed) return false;
+            let genome = genomeFromBuildings(instances, placed, rnd);
+            if (strategy === 'local_repair_seed' && genome) {
+              genome = localRepairGenome(genome, instances, w, h, 'seed_local_repair', rnd, 8);
+            }
+            const ev = evaluateGenome(genome, instances, w, h, 'seed_' + strategy);
+            if (!ev.solution) return false;
+            strategyStats[strategy].hits++;
+            strategyStats[strategy].bestPads = strategyStats[strategy].bestPads == null ? ev.solution.pads : Math.min(strategyStats[strategy].bestPads, ev.solution.pads);
+            strategyStats[strategy].avgPads = strategyStats[strategy].avgPads == null ? ev.solution.pads : (strategyStats[strategy].avgPads * 0.82 + ev.solution.pads * 0.18);
+            const quality = 1 / (1 + (ev.solution.pads || 0) + (ev.solution.missingFields || 0) * 60);
+            const suitability = clamp(Number(contextMul[strategy]) || 1, 0.5, 1.9);
+            const gain = quality * (10 + suitability * 4);
+            strategyWeights[strategy] = clamp((strategyWeights[strategy] * 0.965) + gain, 0.15, 8);
+            population.push({ genome: normalizeGenome(genome), fitness: ev.fitness, solution: ev.solution });
+            return true;
+          };
+          const rankedStrategies = STRATEGY_NAMES
+            .map(name => ({ name, ew: (Math.max(0.001, Number(strategyWeights[name]) || 0.001) * (Number(contextMul[name]) || 1)) }))
+            .sort((a, b) => b.ew - a.ew);
+          const baselineCoverage = Math.max(6, Math.min(STRATEGY_NAMES.length, Math.floor(STRATEGY_NAMES.length * 0.72)));
+
+          // Context-aware baseline: prioritize likely-good strategies for this building mix.
+          for (let i = 0; i < rankedStrategies.length && i < baselineCoverage; i++) {
+            if (population.length >= popSize) break;
+            addStrategySeed(rankedStrategies[i].name);
+          }
+          // Keep a little exploration from lower-ranked strategies.
+          for (let i = baselineCoverage; i < rankedStrategies.length && i < baselineCoverage + 2; i++) {
+            if (population.length >= popSize) break;
+            if (rnd() < 0.6) addStrategySeed(rankedStrategies[i].name);
+          }
+          // Weighted sampling: high-weight strategies are used more often.
+          const weightedSeedTarget = Math.min(popSize, Math.max(10, Math.floor(popSize * 0.82)));
+          let weightedGuard = 0;
+          while (population.length < weightedSeedTarget && weightedGuard < (weightedSeedTarget * 8)) {
+            weightedGuard++;
+            const strategy = (rnd() < 0.12)
+              ? STRATEGY_NAMES[Math.floor(rnd() * STRATEGY_NAMES.length)]
+              : weightedPickStrategyWithContext(strategyWeights, contextMul, rnd);
+            addStrategySeed(strategy);
           }
           while (population.length < popSize) {
             const genome = randomGenome(instances, w, h, rnd);
@@ -2975,9 +3475,9 @@
           }
           return population;
         }
-        function evolveForCandidate(instances, w, h, seed, strategyWeights, strategyStats, generations, popSize, patternSeeds) {
+        function evolveForCandidate(instances, w, h, seed, strategyWeights, strategyStats, generations, popSize, patternSeeds, strategyContextMul) {
           const rnd = rng(seed >>> 0);
-          let population = seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats, patternSeeds);
+          let population = seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats, patternSeeds, strategyContextMul);
           const eliteCount = Math.max(4, Math.floor(popSize * 0.14));
           for (let gen = 0; gen < generations; gen++) {
             if (cancelled) break;
@@ -3049,19 +3549,29 @@
         }
         function solve(payload) {
           cancelled = false;
-          const { counts, catalog, gridW, gridH, strategyWeights: inputWeights, seedSalt = 0, candidateOffset = 0, candidateStride = 1, workerId = 0, workerCount = 1, runId = 0, thermalSafe = false, runMode = 'optimize', patternSeeds = [] } = payload;
+          const { counts, catalog, gridW, gridH, strategyWeights: inputWeights, seedSalt = 0, candidateOffset = 0, candidateStride = 1, workerId = 0, workerCount = 1, runId = 0, thermalSafe = false, runMode = 'optimize', trainingProfileId = '', patternSeeds = [] } = payload;
           const instances = buildInstances(counts, catalog);
           if (!instances.length) { postMessage({ type: 'done', solutions: [], workerId, workerCount, runId }); return; }
           const strategyWeights = sanitizeStrategyWeights(inputWeights || {});
           const strategyStats = Object.fromEntries(STRATEGY_NAMES.map(name => [name, { attempts: 0, hits: 0, bestPads: null, avgPads: null }]));
+          const layoutContext = buildLayoutContext(instances);
+          const strategyContextMul = buildStrategyContextMultipliers(layoutContext);
+          const rankedStrategies = STRATEGY_NAMES
+            .map(name => ({ name, ew: (Math.max(0.001, Number(strategyWeights[name]) || 0.001) * (Number(strategyContextMul[name]) || 1)) }))
+            .sort((a, b) => b.ew - a.ew);
+          const topContextStrategy = rankedStrategies.length ? rankedStrategies[0].name : 'genetic_evolution';
           const tileFarmCount = instances.filter(b => b.fields && (b.fields.unitW || 1) === 1 && (b.fields.unitH || 1) === 1).length;
           const rectFarmCount = instances.filter(b => b.fields && ((b.fields.unitW || 1) > 1 || (b.fields.unitH || 1) > 1)).length;
           const pigFarmCount = instances.filter(b => String(b.id || '').includes('schweinehof')).length;
           const fieldLoad = instances.reduce((s, b) => s + (b.fields ? Math.max(0, Math.floor(Number(b.fields.count) || 0)) : 0), 0);
           const simpleWorkload = instances.length <= 6 && fieldLoad <= 80 && rectFarmCount <= 2 && tileFarmCount <= 2;
           const quickMode = (runMode === 'optimize') && simpleWorkload;
+          const complexTraining = (runMode === 'training') && String(trainingProfileId || '') === 'komplex';
+          const mediumTraining = (runMode === 'training') && String(trainingProfileId || '') === 'mittel';
           const candidateLimitBase = thermalSafe ? 10 : 14;
-          const candidateLimit = quickMode ? Math.min(candidateLimitBase, 8) : candidateLimitBase;
+          let candidateLimit = quickMode ? Math.min(candidateLimitBase, 8) : candidateLimitBase;
+          if (mediumTraining) candidateLimit = Math.min(18, candidateLimit + 2);
+          if (complexTraining) candidateLimit = Math.min(22, candidateLimit + 4);
           const allCandidates = buildCandidates(instances, gridW, gridH).slice(0, candidateLimit);
           const stride = Math.max(1, Math.floor(Number(candidateStride) || 1));
           const offset = Math.max(0, Math.floor(Number(candidateOffset) || 0));
@@ -3073,6 +3583,14 @@
             generations = Math.max(9, Math.floor(generations * 0.62));
             popSize = Math.max(26, Math.floor(popSize * 0.68));
           }
+          if (mediumTraining) {
+            generations = Math.min(44, Math.max(generations + 4, Math.floor(generations * 1.16)));
+            popSize = Math.min(66, Math.max(popSize + 6, Math.floor(popSize * 1.12)));
+          }
+          if (complexTraining) {
+            generations = Math.min(58, Math.max(generations + 10, Math.floor(generations * 1.35)));
+            popSize = Math.min(78, Math.max(popSize + 14, Math.floor(popSize * 1.28)));
+          }
           const maxAttempts = candidates.length * generations;
           let tries = 0;
           const solutions = [];
@@ -3083,7 +3601,7 @@
             if (cancelled) break;
             const salt = (Number(seedSalt) || 0) >>> 0;
             const seed = ((cand.w * 73856093) ^ (cand.h * 19349663) ^ ((salt + 1) * 2654435761) ^ 911382323) >>> 0;
-            const population = evolveForCandidate(instances, cand.w, cand.h, seed, strategyWeights, strategyStats, generations, popSize, effectivePatternSeeds);
+            const population = evolveForCandidate(instances, cand.w, cand.h, seed, strategyWeights, strategyStats, generations, popSize, effectivePatternSeeds, strategyContextMul);
             for (let i = 0; i < generations; i++) {
               tries++;
               if (tries % 2 === 0 || tries === maxAttempts) {
@@ -3094,7 +3612,7 @@
                   tries,
                   maxAttempts,
                   best: best ? { score: best.score, bbox: best.bbox, missingFields: best.missingFields, pads: best.pads } : null,
-                  topStrategy: 'genetic_evolution',
+                  topStrategy: topContextStrategy,
                   workerId,
                   workerCount,
                   runId
@@ -3115,7 +3633,9 @@
 
           if (!cancelled && !solutions.length) {
             const fallbackRnd = rng((((Number(seedSalt) || 0) + 1) * 2654435761) >>> 0);
-            for (const strategy of ['row_processing_gap1', 'row_area_gap1', 'col_area_gap0', 'row_height_gap0']) {
+            const fallbackStrategies = rankedStrategies.slice(0, 6).map(x => x.name);
+            if (!fallbackStrategies.length) fallbackStrategies.push('row_chain_gap1', 'row_processing_gap1');
+            for (const strategy of fallbackStrategies) {
               for (let r = 0; r < 8; r++) {
                 const c = candidates[Math.floor(fallbackRnd() * candidates.length)] || { w: gridW, h: gridH };
                 const placed = packWithStrategy(instances, c.w, c.h, fallbackRnd, strategy);
@@ -3382,9 +3902,10 @@
       clearRunStartTimers();
       const runMode = String(opts.runMode || (trainingState ? 'training' : 'optimize'));
       const isTrainingRun = runMode === 'training';
+      const trainingProfileId = String(opts.trainingProfileId || '');
       const runCounts = (opts.countsOverride && typeof opts.countsOverride === 'object') ? opts.countsOverride : counts;
       const runLoad = summarizeCountsMap(runCounts);
-      const workerCount = optimizerWorkerCount(isTrainingRun, runLoad);
+      const workerCount = optimizerWorkerCount(isTrainingRun, runLoad, trainingProfileId);
       const patternSeeds = buildPatternSeedsForCounts(runCounts, isTrainingRun ? 6 : 4);
       if (patternSeeds.length) {
         const used = new Set(patternSeeds.map(s => String(s.fingerprint || '')).filter(Boolean));
@@ -3428,6 +3949,7 @@
               runId,
               thermalSafe: thermalSafeMode,
               runMode,
+              trainingProfileId,
               patternSeeds
             }
           });
@@ -3462,7 +3984,7 @@
       );
       setRunProgressText('0%');
       setLiveTuningText(`Lauf ${runNo}/${totalRuns} | ${entry.profileLabel} | Gebaeude ${entry.buildingCount} | Ketten ${chainText}`, true);
-      postOptimizeRun(seedSalt, { softStart, runMode: 'training', countsOverride: entry.counts });
+      postOptimizeRun(seedSalt, { softStart, runMode: 'training', trainingProfileId: entry.profileId, countsOverride: entry.counts });
     }
 
     function startTraining() {
@@ -3733,6 +4255,7 @@
     });
 
     buildCatalog();
+    saveLayoutPatternMemory();
     renderSolutions();
     drawSolution(null);
     updateTrainingSnapshotText();
