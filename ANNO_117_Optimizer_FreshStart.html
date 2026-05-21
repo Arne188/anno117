@@ -349,7 +349,10 @@
     let strategyWeights = loadStrategyWeights();
     let activeSolutions = [];
     let activeIndex = -1;
-    let worker = null;
+    let workerPool = [];
+    let workerUrl = null;
+    let activeRun = null;
+    let runSerial = 0;
     let running = false;
     let cancelRequested = false;
     let trainingState = null;
@@ -416,6 +419,47 @@
       optimizeBtnEl.disabled = !!active;
       trainBtnEl.disabled = !!active;
       cancelBtnEl.disabled = !active;
+    }
+
+    function estimatedWorkload() {
+      let buildingCount = 0;
+      let fieldCount = 0;
+      for (const c of CATALOG) {
+        const n = Math.max(0, Math.floor(Number(counts[c.id]) || 0));
+        if (!n) continue;
+        buildingCount += n;
+        if (c.fields) fieldCount += n * Math.max(0, Math.floor(Number(c.fields.count) || 0));
+      }
+      return { buildingCount, fieldCount };
+    }
+
+    function optimizerWorkerCount() {
+      const cores = Math.max(1, Math.floor(Number(navigator.hardwareConcurrency) || 4));
+      const cpuBudget = Math.max(1, cores - 1);
+      const load = estimatedWorkload();
+      const pressure = load.buildingCount + Math.floor(load.fieldCount / 45);
+
+      let cap = 10;
+      if (pressure >= 180) cap = 4;
+      else if (pressure >= 120) cap = 5;
+      else if (pressure >= 70) cap = 6;
+      else if (pressure >= 30) cap = 8;
+
+      if (trainingState) cap = Math.min(cap, 6);
+      return Math.max(1, Math.min(14, cap, cpuBudget));
+    }
+
+    function terminateWorkerPool() {
+      for (const w of workerPool) w.terminate();
+      workerPool = [];
+    }
+
+    function ensureWorkerPool(size) {
+      const target = Math.max(1, Math.floor(Number(size) || 1));
+      if (workerPool.length === target) return workerPool;
+      terminateWorkerPool();
+      workerPool = Array.from({ length: target }, () => createOptimizerWorker());
+      return workerPool;
     }
 
     function solutionLayoutKey(sol) {
@@ -489,8 +533,12 @@
       return Object.values(counts).reduce((s, n) => s + n, 0);
     }
 
-    function ensureWorker() {
-      if (worker) return worker;
+    function createOptimizerWorker() {
+      if (workerUrl) {
+        const nextWorker = new Worker(workerUrl);
+        nextWorker.onmessage = handleWorkerMessage;
+        return nextWorker;
+      }
       const workerSource = `
         let cancelled = false;
         function rng(seed) {
@@ -1982,12 +2030,15 @@
         }
         function solve(payload) {
           cancelled = false;
-          const { counts, catalog, gridW, gridH, strategyWeights: inputWeights, seedSalt = 0 } = payload;
+          const { counts, catalog, gridW, gridH, strategyWeights: inputWeights, seedSalt = 0, candidateOffset = 0, candidateStride = 1, workerId = 0, workerCount = 1, runId = 0 } = payload;
           const instances = buildInstances(counts, catalog);
-          if (!instances.length) { postMessage({ type: 'done', solutions: [] }); return; }
+          if (!instances.length) { postMessage({ type: 'done', solutions: [], workerId, workerCount, runId }); return; }
           const strategyWeights = sanitizeStrategyWeights(inputWeights || {});
           const strategyStats = Object.fromEntries(STRATEGY_NAMES.map(name => [name, { attempts: 0, hits: 0, bestPads: null, avgPads: null }]));
-          const candidates = buildCandidates(instances, gridW, gridH).slice(0, 14);
+          const allCandidates = buildCandidates(instances, gridW, gridH).slice(0, 14);
+          const stride = Math.max(1, Math.floor(Number(candidateStride) || 1));
+          const offset = Math.max(0, Math.floor(Number(candidateOffset) || 0));
+          const candidates = allCandidates.filter((_, idx) => (idx % stride) === offset);
           const tileFarmCount = instances.filter(b => b.fields && (b.fields.unitW || 1) === 1 && (b.fields.unitH || 1) === 1).length;
           const rectFarmCount = instances.filter(b => b.fields && ((b.fields.unitW || 1) > 1 || (b.fields.unitH || 1) > 1)).length;
           const pigFarmCount = instances.filter(b => String(b.id || '').includes('schweinehof')).length;
@@ -2014,7 +2065,10 @@
                   tries,
                   maxAttempts,
                   best: best ? { score: best.score, bbox: best.bbox, missingFields: best.missingFields, pads: best.pads } : null,
-                  topStrategy: 'genetic_evolution'
+                  topStrategy: 'genetic_evolution',
+                  workerId,
+                  workerCount,
+                  runId
                 });
               }
             }
@@ -2049,7 +2103,7 @@
             }
           }
           solutions.sort((a, b) => a.score - b.score);
-          postMessage({ type: 'done', solutions, strategyWeights, strategyStats });
+          postMessage({ type: 'done', solutions, strategyWeights, strategyStats, workerId, workerCount, runId });
         }
         onmessage = ev => {
           const msg = ev.data || {};
@@ -2058,13 +2112,43 @@
         };
       `;
       const blob = new Blob([workerSource], { type: 'text/javascript' });
-      worker = new Worker(URL.createObjectURL(blob));
-      worker.onmessage = handleWorkerMessage;
-      return worker;
+      workerUrl = URL.createObjectURL(blob);
+      const nextWorker = new Worker(workerUrl);
+      nextWorker.onmessage = handleWorkerMessage;
+      return nextWorker;
     }
 
     function handleWorkerMessage(ev) {
-      const msg = ev.data || {};
+      let msg = ev.data || {};
+      if ((msg.type === 'progress' || msg.type === 'done') && activeRun) {
+        if ((Number(msg.runId) || 0) !== activeRun.runId) return;
+      }
+      if (activeRun && msg.type === 'progress') {
+        const id = Number.isFinite(Number(msg.workerId)) ? Number(msg.workerId) : 0;
+        activeRun.progressByWorker.set(id, {
+          progress: Number(msg.progress) || 0,
+          tries: Number(msg.tries) || 0,
+          maxAttempts: Number(msg.maxAttempts) || 0,
+          best: msg.best || null,
+          topStrategy: msg.topStrategy || ''
+        });
+        let tries = 0;
+        let maxAttempts = 0;
+        let best = null;
+        for (const p of activeRun.progressByWorker.values()) {
+          tries += p.tries;
+          maxAttempts += p.maxAttempts;
+          if (p.best && (!best || Number(p.best.score) < Number(best.score))) best = p.best;
+        }
+        msg = {
+          ...msg,
+          tries,
+          maxAttempts,
+          progress: maxAttempts ? Math.round((tries / maxAttempts) * 100) : msg.progress,
+          best,
+          topStrategy: `${activeRun.workerCount} Worker`
+        };
+      }
       if (msg.type === 'progress') {
         if (trainingState) {
           const cycle = trainingState.done + 1;
@@ -2084,6 +2168,50 @@
         setStatus(`Suche laeuft... ${msg.tries}/${msg.maxAttempts}`, `${bestText}${stratText}`, msg.progress || 0);
       }
       if (msg.type === 'done') {
+        if (activeRun) {
+          activeRun.doneMessages.push(msg);
+          activeRun.pending--;
+          if (activeRun.pending > 0) return;
+
+          const solutions = [];
+          const keys = new Set();
+          const strategyStats = {};
+          let mergedWeights = null;
+
+          for (const done of activeRun.doneMessages) {
+            if (done.strategyWeights && typeof done.strategyWeights === 'object') {
+              mergedWeights = { ...(mergedWeights || {}), ...done.strategyWeights };
+            }
+            if (done.strategyStats && typeof done.strategyStats === 'object') {
+              for (const [name, stats] of Object.entries(done.strategyStats)) {
+                if (!strategyStats[name]) strategyStats[name] = { attempts: 0, hits: 0, bestPads: null, avgPads: null };
+                strategyStats[name].attempts += Number(stats.attempts) || 0;
+                strategyStats[name].hits += Number(stats.hits) || 0;
+                if (stats.bestPads != null) {
+                  strategyStats[name].bestPads = strategyStats[name].bestPads == null
+                    ? stats.bestPads
+                    : Math.min(strategyStats[name].bestPads, stats.bestPads);
+                }
+                if (stats.avgPads != null) {
+                  strategyStats[name].avgPads = strategyStats[name].avgPads == null
+                    ? stats.avgPads
+                    : ((strategyStats[name].avgPads + stats.avgPads) / 2);
+                }
+              }
+            }
+            for (const sol of Array.isArray(done.solutions) ? done.solutions : []) {
+              const key = solutionLayoutKey(sol);
+              if (!key || keys.has(key)) continue;
+              keys.add(key);
+              solutions.push(sol);
+            }
+          }
+
+          solutions.sort((a, b) => a.score - b.score);
+          if (solutions.length > 12) solutions.splice(12);
+          msg = { type: 'done', solutions, strategyWeights: mergedWeights, strategyStats };
+          activeRun = null;
+        }
         if (msg.strategyWeights && typeof msg.strategyWeights === 'object') {
           strategyWeights = { ...msg.strategyWeights };
           saveStrategyWeights(strategyWeights);
@@ -2125,6 +2253,7 @@
               setStatus(`Training beendet: ${finished}/${total} Laeufe.`, 'Keine Loesung gefunden.', 0);
             }
             trainingState = null;
+            terminateWorkerPool();
             return;
           }
 
@@ -2156,21 +2285,38 @@
         activeIndex = 0;
         renderSolutions();
         drawSolution(best);
+        terminateWorkerPool();
       }
     }
 
     function postOptimizeRun(seedSalt = 0) {
-      const w = ensureWorker();
-      w.postMessage({
-        type: 'optimize',
-        payload: {
-          counts,
-          catalog: CATALOG,
-          gridW: GRID_W,
-          gridH: GRID_H,
-          strategyWeights,
-          seedSalt
-        }
+      const workerCount = optimizerWorkerCount();
+      const runId = ++runSerial;
+      activeRun = {
+        runId,
+        workerCount,
+        pending: workerCount,
+        doneMessages: [],
+        progressByWorker: new Map()
+      };
+      const pool = ensureWorkerPool(workerCount);
+      pool.forEach((w, i) => {
+        w.postMessage({
+          type: 'optimize',
+          payload: {
+            counts,
+            catalog: CATALOG,
+            gridW: GRID_W,
+            gridH: GRID_H,
+            strategyWeights,
+            seedSalt,
+            candidateOffset: i,
+            candidateStride: workerCount,
+            workerId: i,
+            workerCount,
+            runId
+          }
+        });
       });
     }
 
@@ -2343,10 +2489,10 @@
     }
 
     function cancelOptimize() {
-      if (!running || !worker) return;
+      if (!running || !workerPool.length) return;
       cancelRequested = true;
       if (trainingState) trainingState.cancelled = true;
-      worker.postMessage({ type: 'cancel' });
+      for (const w of workerPool) w.postMessage({ type: 'cancel' });
       setStatus('Abbruch angefordert...', 'Aktueller Lauf wird sauber gestoppt.', Number(progressBarEl.style.width.replace('%', '')) || 0);
     }
 
@@ -2365,6 +2511,13 @@
       renderSolutions();
       drawSolution(null);
       setStatus('Trefferliste geleert.', '', 0);
+    });
+    window.addEventListener('beforeunload', () => {
+      terminateWorkerPool();
+      if (workerUrl) {
+        URL.revokeObjectURL(workerUrl);
+        workerUrl = null;
+      }
     });
 
     buildCatalog();
