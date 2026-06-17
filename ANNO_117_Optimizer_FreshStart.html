@@ -89,7 +89,7 @@
     .worker-setting {
       grid-column: 1 / -1;
       display: grid;
-      grid-template-columns: auto 84px 1fr;
+      grid-template-columns: auto minmax(84px, 120px) 1fr;
       align-items: center;
       gap: 8px;
       min-height: 34px;
@@ -97,7 +97,7 @@
       color: var(--muted);
     }
     .worker-setting input {
-      width: 84px;
+      width: 100%;
       height: 30px;
       background: #101213;
       border: 1px solid var(--line-soft);
@@ -105,6 +105,15 @@
       border-radius: 5px;
       padding: 0 8px;
       text-align: center;
+    }
+    .worker-setting select {
+      width: 100%;
+      height: 30px;
+      background: #101213;
+      border: 1px solid var(--line-soft);
+      color: var(--text);
+      border-radius: 5px;
+      padding: 0 8px;
     }
     .toggle-setting {
       grid-column: 1 / -1;
@@ -223,6 +232,50 @@
       background: linear-gradient(90deg, #d6a84f, #f0c56a);
       transition: width .16s linear;
     }
+    .monitor {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line-soft);
+      display: grid;
+      gap: 8px;
+    }
+    .monitor-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .monitor-card {
+      background: #171a1b;
+      border: 1px solid var(--line-soft);
+      padding: 8px;
+      min-height: 54px;
+    }
+    .monitor-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .monitor-value {
+      font-size: 13px;
+      color: var(--text);
+      font-weight: 650;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+    .monitor-log {
+      background: #171a1b;
+      border: 1px solid var(--line-soft);
+      padding: 8px;
+      max-height: 112px;
+      overflow: auto;
+      display: grid;
+      gap: 4px;
+    }
+    .monitor-log-entry {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.3;
+    }
     .workspace {
       display: grid;
       grid-template-columns: minmax(560px, 1fr) 390px;
@@ -340,6 +393,19 @@
           <input id="workerCountInput" type="number" min="0" max="14" step="1" value="0" />
           <span>0 = Auto, 1-14 = feste Workerzahl</span>
         </label>
+        <label class="worker-setting" for="activeWorkerCountInput">
+          <span>Aktive Worker max</span>
+          <input id="activeWorkerCountInput" type="number" min="0" max="14" step="1" value="0" />
+          <span>0 = Auto, limitiert gleichzeitige Last</span>
+        </label>
+        <label class="worker-setting" for="trainingModeSelect">
+          <span>Training Fokus</span>
+          <select id="trainingModeSelect">
+            <option value="auto">Auto Mix</option>
+            <option value="targeted">Aktuelle Auswahl</option>
+          </select>
+          <span>Auto erzeugt neue sinnvolle Kombinationen, Aktuelle Auswahl trainiert genau die links gesetzte Gebaeudekombi</span>
+        </label>
         <label class="toggle-setting" for="thermalSafeInput">
           <input id="thermalSafeInput" type="checkbox" />
           <span>Thermal Safe (weniger Hitze, stabiler, etwas langsamer)</span>
@@ -355,6 +421,21 @@
         <div class="tiny" id="trainingSnapshotText">Trainingstand: wird geladen...</div>
         <div class="tiny" id="liveTuningText">Aktiv: -</div>
         <div class="tiny" id="statusSub">Noch keine Berechnung gestartet.</div>
+        <div class="monitor">
+          <div class="monitor-grid">
+            <div class="monitor-card"><div class="monitor-label">Modus</div><div class="monitor-value" id="monitorMode">-</div></div>
+            <div class="monitor-card"><div class="monitor-label">Lauf</div><div class="monitor-value" id="monitorRun">-</div></div>
+            <div class="monitor-card"><div class="monitor-label">Queue</div><div class="monitor-value" id="monitorQueue">-</div></div>
+            <div class="monitor-card"><div class="monitor-label">APS</div><div class="monitor-value" id="monitorAps">-</div></div>
+            <div class="monitor-card"><div class="monitor-label">Beste Box</div><div class="monitor-value" id="monitorBestBox">-</div></div>
+            <div class="monitor-card"><div class="monitor-label">Beste Score</div><div class="monitor-value" id="monitorBestScore">-</div></div>
+            <div class="monitor-card"><div class="monitor-label">Bestwert Langzeit</div><div class="monitor-value" id="monitorLongBest">-</div></div>
+            <div class="monitor-card"><div class="monitor-label">Trend Langzeit</div><div class="monitor-value" id="monitorLongTrend">-</div></div>
+          </div>
+          <div class="monitor-log" id="monitorLog">
+            <div class="monitor-log-entry">Noch kein Trainingslauf protokolliert.</div>
+          </div>
+        </div>
       </section>
       <section class="workspace">
         <div class="map-wrap"><canvas id="map" width="1440" height="1440"></canvas></div>
@@ -378,12 +459,25 @@
     const STRATEGY_WEIGHTS_KEY = 'anno117_fresh_strategy_weights_v1';
     const AUTOTUNE_KEY = 'anno117_fresh_autotune_v1';
     const WORKER_OVERRIDE_KEY = 'anno117_fresh_worker_override_v1';
+    const ACTIVE_WORKER_OVERRIDE_KEY = 'anno117_fresh_active_worker_override_v1';
+    const TRAINING_MODE_KEY = 'anno117_fresh_training_mode_v1';
     const THERMAL_SAFE_KEY = 'anno117_fresh_thermal_safe_v1';
+    const SCORE_HISTORY_KEY = 'anno117_fresh_score_history_v1';
     const LAYOUT_PATTERN_MEMORY_KEY = 'anno117_fresh_layout_patterns_v1';
+    const STORAGE_DB_NAME = 'anno117_fresh_storage_v1';
+    const STORAGE_DB_STORE = 'kv';
+    const IDB_STRATEGY_WEIGHTS_KEY = 'strategy_weights';
+    const IDB_AUTOTUNE_KEY = 'autotune_state';
+    const IDB_LAYOUT_PATTERN_MEMORY_KEY = 'layout_pattern_memory';
+    const IDB_SCORE_HISTORY_KEY = 'score_history';
+    const IDB_LEARNING_CHECKPOINT_KEY = 'learning_checkpoint';
+    let storageDbPromise = null;
+    let storageWarningLastAt = 0;
 
     const CATALOG = [
       { group: 'Infrastruktur', id: 'infra_lagerhaus', name: 'Lagerhaus', w: 6, h: 6, cat: 'infra', color: '#6a5a45', kind: 'building' },
       { group: 'Latium: Brot', id: 'need_brot_weizenhof', name: 'Weizenhof', w: 3, h: 4, cat: 'prod', color: '#c2a14a', kind: 'building', fields: { id: 'field_wheat', name: 'Weizen-Feld', count: 140, unitW: 1, unitH: 1, color: '#bfa846' } },
+      { group: 'Latium: Brot', id: 'need_brot_getreidemuehle', name: 'Getreidemuehle', w: 4, h: 6, cat: 'prod', color: '#9f8a66', kind: 'building', prodTime: '00:30', chainHint: 'verarbeitet Weizen zu Mehl' },
       { group: 'Latium: Brot', id: 'need_brot_baeckerei', name: 'Baeckerei', w: 4, h: 5, cat: 'prod', color: '#b7773a', kind: 'building' },
       { group: 'Latium: Sandalen', id: 'need_sandalen_schweinehof', name: 'Schweinehof', w: 3, h: 4, cat: 'prod', color: '#a86b4a', kind: 'building', fields: { id: 'field_pigstall', name: 'Stall', count: 5, unitW: 2, unitH: 3, color: '#915d42', rotateSegments: true, brushAllowed: false, diagonalAllowed: true, radiusInner: 8.5, radiusCenterOffsetX: 0, radiusCenterOffsetY: 0, radiusUseTileCenters: true } },
       { group: 'Latium: Sandalen', id: 'need_sandalen_gerberei', name: 'Gerberei', w: 3, h: 4, cat: 'prod', color: '#8b5a2b', kind: 'building' },
@@ -394,17 +488,37 @@
       { group: 'Latium: Haferbrei', id: 'need_haferbrei_garkueche', name: 'Garkueche', w: 4, h: 4, cat: 'prod', color: '#a66a3f', kind: 'building' },
       { group: 'Latium: Tuniken', id: 'need_tuniken_latium_hanfhof', name: 'Hanfhof', w: 4, h: 3, cat: 'prod', color: '#2d7a3b', kind: 'building', fields: { id: 'field_hemp', name: 'Hanf-Feld', count: 60, unitW: 1, unitH: 1, color: '#2f8a35' } },
       { group: 'Latium: Tuniken', id: 'need_tuniken_latium_spinnerei', name: 'Spinnerei', w: 4, h: 3, cat: 'prod', color: '#a35b28', kind: 'building' },
+      { group: 'Latium: Halsketten', id: 'need_halsketten_goldwaescher', name: 'Goldwaescher', w: 4, h: 6, cat: 'prod', color: '#a47b39', kind: 'building', prodTime: '04:00', chainHint: 'foerdert Golderz am Fluss' },
+      { group: 'Latium: Halsketten', id: 'need_halsketten_goldschmied', name: 'Goldschmied', w: 4, h: 6, cat: 'prod', color: '#b48d52', kind: 'building', prodTime: '01:00', chainHint: 'verarbeitet Golderz zu Gold' },
+      { group: 'Latium: Halsketten', id: 'need_halsketten_juwelier', name: 'Juwelier', w: 4, h: 4, cat: 'prod', color: '#d1c06e', kind: 'building', prodTime: '01:30', chainHint: 'stellt Halsketten her' },
+      { group: 'Latium: Austern mit Kaviar', id: 'need_kaviar_austernbett', name: 'Austernbett', w: 6, h: 12, cat: 'prod', color: '#5b7f87', kind: 'building', prodTime: '01:30', chainHint: 'liefert Austern im Hafengebiet' },
+      { group: 'Latium: Austern mit Kaviar', id: 'need_kaviar_stoerbrut', name: 'Stoerbrut', w: 4, h: 6, cat: 'prod', color: '#4a6971', kind: 'building', prodTime: '01:30', chainHint: 'liefert Stoere am Fluss' },
+      { group: 'Latium: Austern mit Kaviar', id: 'need_kaviar_fischausnehmer', name: 'Fischausnehmer', w: 4, h: 4, cat: 'prod', color: '#6d5f54', kind: 'building', prodTime: '00:45', chainHint: 'verarbeitet Stoere zu Kaviar' },
+      { group: 'Latium: Austern mit Kaviar', id: 'need_kaviar_feinschmecker_wasser', name: 'Feinschmecker des Wassers', w: 6, h: 6, cat: 'prod', color: '#7f9ca2', kind: 'building', prodTime: '01:00', chainHint: 'stellt Austern mit Kaviar her' },
+      { group: 'Latium: Vogelzungen in Aspik', id: 'need_aspik_vogellocker', name: 'Vogellocker', w: 3, h: 3, cat: 'prod', color: '#6f7c4b', kind: 'building', prodTime: '01:30', chainHint: 'liefert kleine Voegel im Sumpf' },
+      { group: 'Latium: Vogelzungen in Aspik', id: 'need_aspik_zungenzupfer', name: 'Zungenzupfer', w: 3, h: 5, cat: 'prod', color: '#8a6e5a', kind: 'building', prodTime: '02:00', chainHint: 'gewinnt Vogelzungen' },
+      { group: 'Latium: Vogelzungen in Aspik', id: 'need_aspik_feinschmecker_luft', name: 'Feinschmecker der Luft', w: 5, h: 6, cat: 'prod', color: '#b3a07a', kind: 'building', prodTime: '01:30', chainHint: 'stellt Vogelzungen in Aspik her' },
       { group: 'Albion: Tuniken', id: 'need_tuniken_hanfhof', name: 'Hanfhof', w: 3, h: 4, cat: 'prod', color: '#2d7a3b', kind: 'building', fields: { id: 'field_hemp', name: 'Hanf-Feld', count: 80, unitW: 1, unitH: 1, color: '#2f8a35' } },
       { group: 'Albion: Tuniken', id: 'need_tuniken_spinnerei', name: 'Spinnerei', w: 3, h: 4, cat: 'prod', color: '#a35b28', kind: 'building' },
       { group: 'Albion: Schilfschuhe', id: 'need_schilfschuhe_schilfsammler', name: 'Schilfsammler', w: 4, h: 4, cat: 'prod', color: '#2b7a4a', kind: 'building', fields: { id: 'field_reed', name: 'Schilf-Feld', count: 140, unitW: 1, unitH: 1, color: '#2b7a4a' } },
-      { group: 'Albion: Schilfschuhe', id: 'need_schilfschuhe_schuhweber', name: 'Schuhweber', w: 3, h: 4, cat: 'prod', color: '#8c5a2a', kind: 'building' }
+      { group: 'Albion: Schilfschuhe', id: 'need_schilfschuhe_schuhweber', name: 'Schuhweber', w: 3, h: 4, cat: 'prod', color: '#8c5a2a', kind: 'building' },
+      { group: 'Albion: Amphoren', id: 'need_amphoren_schlammtrockner', name: 'Schlammtrockner', w: 7, h: 7, cat: 'prod', color: '#7f6d57', kind: 'building', prodTime: '01:30', chainHint: 'gewinnt Schlamm im Sumpf' },
+      { group: 'Albion: Amphoren', id: 'need_amphoren_toepfer', name: 'Toepfer', w: 4, h: 5, cat: 'prod', color: '#a56d47', kind: 'building', prodTime: '01:00', chainHint: 'stellt Amphoren aus Schlamm her' },
+      { group: 'Albion: Fibeln', id: 'need_fibeln_silbermine', name: 'Silbermine', w: 3, h: 8, cat: 'prod', color: '#7f858c', kind: 'building', prodTime: '00:30', chainHint: 'foerdert Silbererz' },
+      { group: 'Albion: Fibeln', id: 'need_fibeln_silberschmiede', name: 'Silberschmiede', w: 5, h: 5, cat: 'prod', color: '#aeb5bf', kind: 'building', prodTime: '01:00', chainHint: 'verarbeitet Silbererz zu Silber' },
+      { group: 'Albion: Fibeln', id: 'need_fibeln_fibularium', name: 'Fibularium', w: 5, h: 5, cat: 'prod', color: '#c5b183', kind: 'building', prodTime: '02:00', chainHint: 'stellt Fibeln her' },
+      { group: 'Albion: Purpur', id: 'need_purpur_purpurschneckenhof', name: 'Purpurschneckenhof', w: 5, h: 11, cat: 'prod', color: '#516a8a', kind: 'building', prodTime: '01:30', chainHint: 'liefert Purpurschnecken im Hafengebiet' },
+      { group: 'Albion: Purpur', id: 'need_purpur_faerberei', name: 'Faerberei', w: 5, h: 5, cat: 'prod', color: '#6f4f78', kind: 'building', prodTime: '02:00', chainHint: 'stellt Tyrischen Purpur her' }
     ];
 
     let counts = loadCounts();
     let strategyWeights = loadStrategyWeights();
     let autoTuneState = loadAutoTuneState();
     let layoutPatternMemory = loadLayoutPatternMemory();
+    let scoreHistory = loadScoreHistory();
     let workerOverride = loadWorkerOverride();
+    let activeWorkerOverride = loadActiveWorkerOverride();
+    let trainingMode = loadTrainingMode();
     let thermalSafeMode = loadThermalSafeMode();
     let activeSolutions = [];
     let activeIndex = -1;
@@ -418,23 +532,35 @@
     let trainingDelayTimer = null;
     let runStartTimers = [];
     let liveTuningLastPaintMs = 0;
+    let trainingMonitorLog = [];
     const TRAIN_DEFAULT_RUNS = 40;
     const TRAIN_MAX_RUNS = 400;
-    const TRAIN_PAUSE_MS = 10000;
-    const RUN_SOFT_START_STAGGER_MS = 350;
+    const TRAIN_PAUSE_MS = 15000;
+    const RUN_SOFT_START_MIN_WINDOW_MS = 1400;
+    const RUN_SOFT_START_MAX_WINDOW_MS = 7000;
+    const WORKER_PROGRESS_MIN_INTERVAL_MS = 350;
+    const WORKER_PROGRESS_MIN_DELTA_PCT = 4;
+    const WORKER_MAX_SOLUTIONS_PER_DONE = 4;
+    const PHYSICAL_WORKER_JOB_LIMIT = 1;
     const TRAIN_COMPLEXITY_PROFILES = [
       { id: 'klein', label: 'klein', minBuildings: 3, maxBuildings: 6, fieldBudget: 180, maxPerTypeField: 1, maxPerTypeOther: 2 },
       { id: 'mittel', label: 'mittel', minBuildings: 6, maxBuildings: 11, fieldBudget: 420, maxPerTypeField: 2, maxPerTypeOther: 3 },
       { id: 'komplex', label: 'komplex', minBuildings: 10, maxBuildings: 18, fieldBudget: 820, maxPerTypeField: 3, maxPerTypeOther: 4 }
     ];
     const TRAIN_CHAIN_LIBRARY = [
-      { id: 'latium_brot', label: 'Latium Brot', components: [{ id: 'need_brot_weizenhof', ratio: 1 }, { id: 'need_brot_baeckerei', ratio: 1 }] },
+      { id: 'latium_brot', label: 'Latium Brot', components: [{ id: 'need_brot_weizenhof', ratio: 1 }, { id: 'need_brot_getreidemuehle', ratio: 1 }, { id: 'need_brot_baeckerei', ratio: 1 }] },
       { id: 'latium_sandalen', label: 'Latium Sandalen', components: [{ id: 'need_sandalen_schweinehof', ratio: 1 }, { id: 'need_sandalen_gerberei', ratio: 1 }, { id: 'need_sandalen_sandalenmacher', ratio: 1 }] },
       { id: 'latium_haferbrei', label: 'Latium Haferbrei', components: [{ id: 'need_haferbrei_haferhof', ratio: 1 }, { id: 'need_haferbrei_garkueche', ratio: 1 }] },
       { id: 'latium_tuniken', label: 'Latium Tuniken', components: [{ id: 'need_tuniken_latium_hanfhof', ratio: 1 }, { id: 'need_tuniken_latium_spinnerei', ratio: 1 }] },
       { id: 'latium_pilei', label: 'Latium Pilei', components: [{ id: 'need_pilei_schafshof', ratio: 1 }, { id: 'need_pilei_pileusfilzer', ratio: 2 }] },
+      { id: 'latium_halsketten', label: 'Latium Halsketten', components: [{ id: 'need_halsketten_goldwaescher', ratio: 1 }, { id: 'need_halsketten_goldschmied', ratio: 1 }, { id: 'need_halsketten_juwelier', ratio: 1 }] },
+      { id: 'latium_kaviar', label: 'Latium Austern mit Kaviar', components: [{ id: 'need_kaviar_austernbett', ratio: 1 }, { id: 'need_kaviar_stoerbrut', ratio: 1 }, { id: 'need_kaviar_fischausnehmer', ratio: 1 }, { id: 'need_kaviar_feinschmecker_wasser', ratio: 1 }] },
+      { id: 'latium_aspik', label: 'Latium Vogelzungen in Aspik', components: [{ id: 'need_aspik_vogellocker', ratio: 1 }, { id: 'need_aspik_zungenzupfer', ratio: 1 }, { id: 'need_aspik_feinschmecker_luft', ratio: 1 }] },
       { id: 'albion_tuniken', label: 'Albion Tuniken', components: [{ id: 'need_tuniken_hanfhof', ratio: 1 }, { id: 'need_tuniken_spinnerei', ratio: 1 }] },
-      { id: 'albion_schilfschuhe', label: 'Albion Schilfschuhe', components: [{ id: 'need_schilfschuhe_schilfsammler', ratio: 1 }, { id: 'need_schilfschuhe_schuhweber', ratio: 1 }] }
+      { id: 'albion_schilfschuhe', label: 'Albion Schilfschuhe', components: [{ id: 'need_schilfschuhe_schilfsammler', ratio: 1 }, { id: 'need_schilfschuhe_schuhweber', ratio: 1 }] },
+      { id: 'albion_amphoren', label: 'Albion Amphoren', components: [{ id: 'need_amphoren_schlammtrockner', ratio: 1 }, { id: 'need_amphoren_toepfer', ratio: 1 }] },
+      { id: 'albion_fibeln', label: 'Albion Fibeln', components: [{ id: 'need_fibeln_silbermine', ratio: 1 }, { id: 'need_fibeln_silberschmiede', ratio: 1 }, { id: 'need_fibeln_fibularium', ratio: 1 }] },
+      { id: 'albion_purpur', label: 'Albion Purpur', components: [{ id: 'need_purpur_purpurschneckenhof', ratio: 1 }, { id: 'need_purpur_faerberei', ratio: 1 }] }
     ];
 
     const catalogEl = document.getElementById('catalog');
@@ -444,6 +570,15 @@
     const trainingSnapshotTextEl = document.getElementById('trainingSnapshotText');
     const liveTuningTextEl = document.getElementById('liveTuningText');
     const progressBarEl = document.getElementById('progressBar');
+    const monitorModeEl = document.getElementById('monitorMode');
+    const monitorRunEl = document.getElementById('monitorRun');
+    const monitorQueueEl = document.getElementById('monitorQueue');
+    const monitorApsEl = document.getElementById('monitorAps');
+    const monitorBestBoxEl = document.getElementById('monitorBestBox');
+    const monitorBestScoreEl = document.getElementById('monitorBestScore');
+    const monitorLongBestEl = document.getElementById('monitorLongBest');
+    const monitorLongTrendEl = document.getElementById('monitorLongTrend');
+    const monitorLogEl = document.getElementById('monitorLog');
     const mapCanvas = document.getElementById('map');
     const solutionListEl = document.getElementById('solutionList');
     const solutionsSubEl = document.getElementById('solutionsSub');
@@ -454,6 +589,8 @@
     const importTrainingBtnEl = document.getElementById('importTrainingBtn');
     const importTrainingFileEl = document.getElementById('importTrainingFile');
     const workerCountInputEl = document.getElementById('workerCountInput');
+    const activeWorkerCountInputEl = document.getElementById('activeWorkerCountInput');
+    const trainingModeSelectEl = document.getElementById('trainingModeSelect');
     const thermalSafeInputEl = document.getElementById('thermalSafeInput');
 
     function loadCounts() {
@@ -461,19 +598,176 @@
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return Object.fromEntries(CATALOG.map(c => [c.id, 0]));
         const parsed = JSON.parse(raw);
-        const next = Object.fromEntries(CATALOG.map(c => [c.id, 0]));
-        for (const c of CATALOG) {
-          const n = Math.floor(Number(parsed[c.id]) || 0);
-          next[c.id] = Math.max(0, Math.min(999, n));
-        }
-        return next;
+        return sanitizeCountsObject(parsed);
       } catch {
         return Object.fromEntries(CATALOG.map(c => [c.id, 0]));
       }
     }
 
+    function sanitizeCountsObject(raw) {
+      const next = Object.fromEntries(CATALOG.map(c => [c.id, 0]));
+      const src = raw && typeof raw === 'object' ? raw : {};
+      for (const c of CATALOG) {
+        const n = Math.floor(Number(src[c.id]) || 0);
+        next[c.id] = Math.max(0, Math.min(999, n));
+      }
+      return next;
+    }
+
+    function hasIndexedDbSupport() {
+      return typeof indexedDB !== 'undefined' && indexedDB != null;
+    }
+
+    function openStorageDb() {
+      if (!hasIndexedDbSupport()) return Promise.resolve(null);
+      if (storageDbPromise) return storageDbPromise;
+      storageDbPromise = new Promise(resolve => {
+        try {
+          const req = indexedDB.open(STORAGE_DB_NAME, 1);
+          req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(STORAGE_DB_STORE)) db.createObjectStore(STORAGE_DB_STORE);
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => resolve(null);
+        } catch {
+          resolve(null);
+        }
+      });
+      return storageDbPromise;
+    }
+
+    async function idbGet(key) {
+      const db = await openStorageDb();
+      if (!db) return null;
+      return new Promise(resolve => {
+        try {
+          const tx = db.transaction(STORAGE_DB_STORE, 'readonly');
+          const store = tx.objectStore(STORAGE_DB_STORE);
+          const req = store.get(key);
+          req.onsuccess = () => resolve(req.result == null ? null : req.result);
+          req.onerror = () => resolve(null);
+        } catch {
+          resolve(null);
+        }
+      });
+    }
+
+    async function idbSet(key, value) {
+      const db = await openStorageDb();
+      if (!db) return false;
+      return new Promise(resolve => {
+        try {
+          const tx = db.transaction(STORAGE_DB_STORE, 'readwrite');
+          const store = tx.objectStore(STORAGE_DB_STORE);
+          const req = store.put(value, key);
+          req.onsuccess = () => resolve(true);
+          req.onerror = () => resolve(false);
+        } catch {
+          resolve(false);
+        }
+      });
+    }
+
+    async function idbDelete(key) {
+      const db = await openStorageDb();
+      if (!db) return false;
+      return new Promise(resolve => {
+        try {
+          const tx = db.transaction(STORAGE_DB_STORE, 'readwrite');
+          const store = tx.objectStore(STORAGE_DB_STORE);
+          const req = store.delete(key);
+          req.onsuccess = () => resolve(true);
+          req.onerror = () => resolve(false);
+        } catch {
+          resolve(false);
+        }
+      });
+    }
+
+    function isQuotaExceededError(err) {
+      if (!err) return false;
+      const name = String(err.name || '');
+      const msg = String(err.message || '');
+      return name === 'QuotaExceededError' || msg.includes('QuotaExceededError') || msg.includes('exceeded the quota');
+    }
+
+    function noteStoragePressure(text) {
+      const now = Date.now();
+      if ((now - storageWarningLastAt) < 2500) return;
+      storageWarningLastAt = now;
+      try { console.warn(text); } catch {}
+      if (statusTextEl && statusSubEl) {
+        setStatus('Browser-Speicher bereinigt.', text, null);
+      }
+    }
+
+    function trimPatternMemoryTo(limit) {
+      const safeLimit = Math.max(0, Math.floor(Number(limit) || 0));
+      layoutPatternMemory = compactPatternMemory(layoutPatternMemory);
+      if (layoutPatternMemory.length > safeLimit) layoutPatternMemory = layoutPatternMemory.slice(0, safeLimit);
+      try { localStorage.removeItem(LAYOUT_PATTERN_MEMORY_KEY); } catch {}
+      if (hasIndexedDbSupport()) {
+        if (layoutPatternMemory.length) void idbSet(IDB_LAYOUT_PATTERN_MEMORY_KEY, layoutPatternMemory);
+        else void idbDelete(IDB_LAYOUT_PATTERN_MEMORY_KEY);
+      } else {
+        try {
+          if (layoutPatternMemory.length) localStorage.setItem(LAYOUT_PATTERN_MEMORY_KEY, JSON.stringify(layoutPatternMemory));
+          else localStorage.removeItem(LAYOUT_PATTERN_MEMORY_KEY);
+        } catch {
+          // ignore secondary storage failures here
+        }
+      }
+    }
+
+    function relieveStoragePressure(preferredKey = '') {
+      try {
+        const legacyPatternRaw = localStorage.getItem(LAYOUT_PATTERN_MEMORY_KEY);
+        if (legacyPatternRaw) {
+          localStorage.removeItem(LAYOUT_PATTERN_MEMORY_KEY);
+          return true;
+        }
+        const currentPatterns = Array.isArray(layoutPatternMemory) ? layoutPatternMemory.length : 0;
+        if (preferredKey === LAYOUT_PATTERN_MEMORY_KEY) {
+          if (currentPatterns > 24) { trimPatternMemoryTo(24); return true; }
+          if (currentPatterns > 12) { trimPatternMemoryTo(12); return true; }
+          if (currentPatterns > 6) { trimPatternMemoryTo(6); return true; }
+          if (currentPatterns > 0) { trimPatternMemoryTo(0); return true; }
+        } else {
+          if (currentPatterns > 32) { trimPatternMemoryTo(32); return true; }
+          if (currentPatterns > 16) { trimPatternMemoryTo(16); return true; }
+          if (currentPatterns > 8) { trimPatternMemoryTo(8); return true; }
+          if (currentPatterns > 0) { trimPatternMemoryTo(0); return true; }
+        }
+      } catch {
+        // ignore and continue
+      }
+      return false;
+    }
+
+    function safeStorageSetItem(key, value, fallbackText = 'Lokaler Speicher war voll.') {
+      try {
+        localStorage.setItem(key, value);
+        return true;
+      } catch (err) {
+        if (!isQuotaExceededError(err)) return false;
+      }
+      if (relieveStoragePressure(key)) {
+        try {
+          localStorage.setItem(key, value);
+          noteStoragePressure(fallbackText);
+          return true;
+        } catch (err) {
+          if (!isQuotaExceededError(err)) return false;
+        }
+      }
+      noteStoragePressure(fallbackText);
+      return false;
+    }
+
     function saveCounts() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(counts));
+      counts = sanitizeCountsObject(counts);
+      safeStorageSetItem(STORAGE_KEY, JSON.stringify(counts), 'Pattern-Speicher wurde gekuerzt, damit Mengen weiter gespeichert werden koennen.');
     }
 
     function loadStrategyWeights() {
@@ -488,11 +782,8 @@
     }
 
     function saveStrategyWeights(weights) {
-      try {
-        localStorage.setItem(STRATEGY_WEIGHTS_KEY, JSON.stringify(weights || {}));
-      } catch {
-        // ignore storage errors
-      }
+      safeStorageSetItem(STRATEGY_WEIGHTS_KEY, JSON.stringify(weights || {}), 'Pattern-Speicher wurde gekuerzt, damit Trainingsgewichte gespeichert bleiben.');
+      if (hasIndexedDbSupport()) void idbSet(IDB_STRATEGY_WEIGHTS_KEY, normalizedWeightsObject(weights));
     }
 
     function loadAutoTuneState() {
@@ -512,11 +803,8 @@
     }
 
     function saveAutoTuneState() {
-      try {
-        localStorage.setItem(AUTOTUNE_KEY, JSON.stringify(autoTuneState || {}));
-      } catch {
-        // ignore storage errors
-      }
+      safeStorageSetItem(AUTOTUNE_KEY, JSON.stringify(autoTuneState || {}), 'Pattern-Speicher wurde gekuerzt, damit Auto-Tuning gespeichert bleibt.');
+      if (hasIndexedDbSupport()) void idbSet(IDB_AUTOTUNE_KEY, normalizeAutoTune(autoTuneState));
     }
 
     function loadWorkerOverride() {
@@ -532,12 +820,40 @@
     function saveWorkerOverride(value) {
       const n = Math.max(0, Math.min(14, Math.floor(Number(value) || 0)));
       workerOverride = n;
-      try {
-        localStorage.setItem(WORKER_OVERRIDE_KEY, String(n));
-      } catch {
-        // ignore storage errors
-      }
+      safeStorageSetItem(WORKER_OVERRIDE_KEY, String(n), 'Pattern-Speicher wurde gekuerzt, damit Worker-Einstellungen gespeichert bleiben.');
       return n;
+    }
+
+    function loadActiveWorkerOverride() {
+      try {
+        const raw = localStorage.getItem(ACTIVE_WORKER_OVERRIDE_KEY);
+        const n = Math.floor(Number(raw) || 0);
+        return Math.max(0, Math.min(14, n));
+      } catch {
+        return 0;
+      }
+    }
+
+    function saveActiveWorkerOverride(value) {
+      const n = Math.max(0, Math.min(14, Math.floor(Number(value) || 0)));
+      activeWorkerOverride = n;
+      safeStorageSetItem(ACTIVE_WORKER_OVERRIDE_KEY, String(n), 'Pattern-Speicher wurde gekuerzt, damit Aktive-Worker gespeichert bleiben.');
+      return n;
+    }
+
+    function loadTrainingMode() {
+      try {
+        const raw = String(localStorage.getItem(TRAINING_MODE_KEY) || 'auto');
+        return raw === 'targeted' ? 'targeted' : 'auto';
+      } catch {
+        return 'auto';
+      }
+    }
+
+    function saveTrainingMode(value) {
+      trainingMode = String(value || 'auto') === 'targeted' ? 'targeted' : 'auto';
+      safeStorageSetItem(TRAINING_MODE_KEY, trainingMode, 'Pattern-Speicher wurde gekuerzt, damit der Trainingsfokus gespeichert bleibt.');
+      return trainingMode;
     }
 
     function loadThermalSafeMode() {
@@ -551,11 +867,7 @@
 
     function saveThermalSafeMode(value) {
       thermalSafeMode = !!value;
-      try {
-        localStorage.setItem(THERMAL_SAFE_KEY, thermalSafeMode ? '1' : '0');
-      } catch {
-        // ignore storage errors
-      }
+      safeStorageSetItem(THERMAL_SAFE_KEY, thermalSafeMode ? '1' : '0', 'Pattern-Speicher wurde gekuerzt, damit Thermal-Safe gespeichert bleibt.');
       return thermalSafeMode;
     }
 
@@ -691,11 +1003,230 @@
     }
 
     function saveLayoutPatternMemory() {
+      layoutPatternMemory = compactPatternMemory(layoutPatternMemory);
+      try { localStorage.removeItem(LAYOUT_PATTERN_MEMORY_KEY); } catch {}
+      if (hasIndexedDbSupport()) {
+        if (layoutPatternMemory.length) {
+          void idbSet(IDB_LAYOUT_PATTERN_MEMORY_KEY, layoutPatternMemory);
+        } else {
+          void idbDelete(IDB_LAYOUT_PATTERN_MEMORY_KEY);
+        }
+        return;
+      }
+      const json = JSON.stringify(layoutPatternMemory);
+      if (safeStorageSetItem(LAYOUT_PATTERN_MEMORY_KEY, json, 'Pattern-Speicher wurde gekuerzt, weil der Browser-Speicher voll war.')) return;
+      try { trimPatternMemoryTo(0); } catch {}
+    }
+
+    function sanitizeScoreHistory(raw) {
+      if (!Array.isArray(raw)) return [];
+      const out = [];
+      for (const entry of raw) {
+        if (!entry || typeof entry !== 'object') continue;
+        const score = Number(entry.score);
+        if (!Number.isFinite(score) || score <= 0) continue;
+        out.push({
+          ts: String(entry.ts || new Date().toISOString()),
+          mode: String(entry.mode || 'run'),
+          score,
+          bbox: String(entry.bbox || '-'),
+          note: String(entry.note || '')
+        });
+      }
+      out.sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+      if (out.length > 240) return out.slice(out.length - 240);
+      return out;
+    }
+
+    function loadScoreHistory() {
       try {
-        layoutPatternMemory = compactPatternMemory(layoutPatternMemory);
-        localStorage.setItem(LAYOUT_PATTERN_MEMORY_KEY, JSON.stringify(layoutPatternMemory));
+        const raw = localStorage.getItem(SCORE_HISTORY_KEY);
+        if (!raw) return [];
+        return sanitizeScoreHistory(JSON.parse(raw));
       } catch {
-        // ignore storage errors
+        return [];
+      }
+    }
+
+    function saveScoreHistory() {
+      scoreHistory = sanitizeScoreHistory(scoreHistory);
+      if (hasIndexedDbSupport()) {
+        if (scoreHistory.length) void idbSet(IDB_SCORE_HISTORY_KEY, scoreHistory);
+        else void idbDelete(IDB_SCORE_HISTORY_KEY);
+        return;
+      }
+      safeStorageSetItem(SCORE_HISTORY_KEY, JSON.stringify(scoreHistory), 'Score-Historie wurde gekuerzt, damit Langzeitdaten speicherbar bleiben.');
+    }
+
+    function summarizeScoreHistory(history = scoreHistory) {
+      const list = sanitizeScoreHistory(history);
+      if (!list.length) {
+        return { count: 0, best: null, overallPct: null, recentPct: null };
+      }
+      const first = list[0].score;
+      const best = list.reduce((m, e) => Math.min(m, e.score), list[0].score);
+      const overallPct = first > 0 ? ((first - best) / first) * 100 : null;
+      const window = Math.min(20, list.length);
+      let recentPct = null;
+      if (window >= 4) {
+        const recent = list.slice(-window);
+        const mid = Math.max(1, Math.floor(recent.length / 2));
+        const olderBest = recent.slice(0, mid).reduce((m, e) => Math.min(m, e.score), recent[0].score);
+        const newerBest = recent.slice(mid).reduce((m, e) => Math.min(m, e.score), recent[mid].score);
+        recentPct = olderBest > 0 ? ((olderBest - newerBest) / olderBest) * 100 : null;
+      }
+      return { count: list.length, best, overallPct, recentPct };
+    }
+
+    function updateScoreTrendMonitor() {
+      const summary = summarizeScoreHistory();
+      if (!summary.count) {
+        monitorLongBestEl.textContent = '-';
+        monitorLongTrendEl.textContent = '-';
+        return;
+      }
+      monitorLongBestEl.textContent = `${Math.round(summary.best)} | ${summary.count} Runs`;
+      const overall = Number.isFinite(summary.overallPct) ? `${summary.overallPct.toFixed(1)}% besser` : '-';
+      const recent = Number.isFinite(summary.recentPct) ? `${summary.recentPct.toFixed(1)}% / 20` : '-';
+      monitorLongTrendEl.textContent = `${overall} | ${recent}`;
+    }
+
+    function recordScoreHistory(mode, sol, note = '') {
+      if (!sol || !Number.isFinite(Number(sol.score))) return;
+      scoreHistory.push({
+        ts: new Date().toISOString(),
+        mode: String(mode || 'run'),
+        score: Number(sol.score),
+        bbox: sol && sol.bbox ? `${sol.bbox.w}x${sol.bbox.h}` : '-',
+        note: String(note || '')
+      });
+      scoreHistory = sanitizeScoreHistory(scoreHistory);
+      saveScoreHistory();
+      updateScoreTrendMonitor();
+    }
+
+    function buildLearningCheckpoint(reason = 'auto') {
+      const progress = trainingState
+        ? {
+            active: true,
+            totalRuns: Math.max(1, Math.floor(Number(trainingState.totalRuns) || 1)),
+            done: Math.max(0, Math.floor(Number(trainingState.done) || 0)),
+            cancelled: !!trainingState.cancelled,
+            currentProfileId: String(trainingState.currentEntry?.profileId || ''),
+            currentProfileLabel: String(trainingState.currentEntry?.profileLabel || '')
+          }
+        : { active: false };
+      return {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        reason: String(reason || 'auto'),
+        strategyWeights: normalizedWeightsObject(strategyWeights),
+        autoTuneState: normalizeAutoTune(autoTuneState),
+        layoutPatternMemory: compactPatternMemory(layoutPatternMemory),
+        scoreHistory: sanitizeScoreHistory(scoreHistory),
+        trainingProgress: progress
+      };
+    }
+
+    async function persistLearningCheckpoint(reason = 'auto', options = {}) {
+      const snapshot = buildLearningCheckpoint(reason);
+      const fullSnapshot = options && Object.prototype.hasOwnProperty.call(options, 'fullSnapshot')
+        ? !!options.fullSnapshot
+        : true;
+      if (!hasIndexedDbSupport()) return snapshot;
+      const writes = [
+        idbSet(IDB_STRATEGY_WEIGHTS_KEY, snapshot.strategyWeights),
+        idbSet(IDB_AUTOTUNE_KEY, snapshot.autoTuneState),
+        snapshot.layoutPatternMemory.length
+          ? idbSet(IDB_LAYOUT_PATTERN_MEMORY_KEY, snapshot.layoutPatternMemory)
+          : idbDelete(IDB_LAYOUT_PATTERN_MEMORY_KEY),
+        snapshot.scoreHistory.length
+          ? idbSet(IDB_SCORE_HISTORY_KEY, snapshot.scoreHistory)
+          : idbDelete(IDB_SCORE_HISTORY_KEY),
+      ];
+      if (fullSnapshot) writes.push(idbSet(IDB_LEARNING_CHECKPOINT_KEY, snapshot));
+      await Promise.all(writes);
+      return snapshot;
+    }
+
+    async function hydratePersistentState() {
+      let changed = false;
+      if (hasIndexedDbSupport()) {
+        const [idbWeights, idbAutoTune, idbPatterns, idbScoreHistory, idbCheckpoint] = await Promise.all([
+          idbGet(IDB_STRATEGY_WEIGHTS_KEY),
+          idbGet(IDB_AUTOTUNE_KEY),
+          idbGet(IDB_LAYOUT_PATTERN_MEMORY_KEY),
+          idbGet(IDB_SCORE_HISTORY_KEY),
+          idbGet(IDB_LEARNING_CHECKPOINT_KEY)
+        ]);
+
+        const checkpointWeights = idbCheckpoint && typeof idbCheckpoint.strategyWeights === 'object'
+          ? idbCheckpoint.strategyWeights
+          : null;
+        const checkpointAutoTune = idbCheckpoint && typeof idbCheckpoint.autoTuneState === 'object'
+          ? idbCheckpoint.autoTuneState
+          : null;
+        const checkpointPatterns = idbCheckpoint && Array.isArray(idbCheckpoint.layoutPatternMemory)
+          ? idbCheckpoint.layoutPatternMemory
+          : null;
+        const checkpointScoreHistory = idbCheckpoint && Array.isArray(idbCheckpoint.scoreHistory)
+          ? idbCheckpoint.scoreHistory
+          : null;
+
+        if (checkpointWeights) {
+          strategyWeights = normalizedWeightsObject(checkpointWeights);
+          changed = true;
+        } else if (idbWeights && typeof idbWeights === 'object') {
+          strategyWeights = normalizedWeightsObject(idbWeights);
+          changed = true;
+        } else if (strategyWeights && Object.keys(strategyWeights).length) {
+          void idbSet(IDB_STRATEGY_WEIGHTS_KEY, normalizedWeightsObject(strategyWeights));
+        }
+
+        if (checkpointAutoTune) {
+          autoTuneState = normalizeAutoTune(checkpointAutoTune);
+          changed = true;
+        } else if (idbAutoTune && typeof idbAutoTune === 'object') {
+          autoTuneState = normalizeAutoTune(idbAutoTune);
+          changed = true;
+        } else if (autoTuneState && typeof autoTuneState === 'object') {
+          void idbSet(IDB_AUTOTUNE_KEY, normalizeAutoTune(autoTuneState));
+        }
+
+        if (checkpointPatterns) {
+          layoutPatternMemory = compactPatternMemory(checkpointPatterns);
+          changed = true;
+        } else if (Array.isArray(idbPatterns)) {
+          layoutPatternMemory = compactPatternMemory(idbPatterns);
+          changed = true;
+        } else {
+          const legacyPatterns = loadLayoutPatternMemory();
+          if (legacyPatterns.length) {
+            layoutPatternMemory = compactPatternMemory(legacyPatterns);
+            void idbSet(IDB_LAYOUT_PATTERN_MEMORY_KEY, layoutPatternMemory);
+            changed = true;
+          }
+        }
+
+        if (checkpointScoreHistory) {
+          scoreHistory = sanitizeScoreHistory(checkpointScoreHistory);
+          changed = true;
+        } else if (Array.isArray(idbScoreHistory)) {
+          scoreHistory = sanitizeScoreHistory(idbScoreHistory);
+          changed = true;
+        } else if (Array.isArray(scoreHistory) && scoreHistory.length) {
+          void idbSet(IDB_SCORE_HISTORY_KEY, sanitizeScoreHistory(scoreHistory));
+        }
+      }
+
+      try { localStorage.removeItem(LAYOUT_PATTERN_MEMORY_KEY); } catch {}
+      try { localStorage.removeItem(SCORE_HISTORY_KEY); } catch {}
+      if (changed) {
+        updateTrainingSnapshotText();
+        updateScoreTrendMonitor();
+        if (!running) {
+          setStatus('Bereit.', 'Trainingsdaten wurden in IndexedDB geladen.', 0);
+        }
       }
     }
 
@@ -775,7 +1306,8 @@
         exportedAt: new Date().toISOString(),
         strategyWeights: normalizedWeightsObject(strategyWeights),
         autoTuneState: normalizeAutoTune(autoTuneState),
-        layoutPatternMemory: compactPatternMemory(layoutPatternMemory)
+        layoutPatternMemory: compactPatternMemory(layoutPatternMemory),
+        scoreHistory: sanitizeScoreHistory(scoreHistory)
       };
     }
 
@@ -806,22 +1338,30 @@
       const incomingPatterns = Array.isArray(payload.layoutPatternMemory)
         ? payload.layoutPatternMemory
         : [];
+      const incomingScoreHistory = Array.isArray(payload.scoreHistory)
+        ? payload.scoreHistory
+        : [];
 
       const mergedWeights = mergeStrategyWeightsAdditive(strategyWeights, incomingWeights);
       const mergedAutoTune = mergeAutoTuneAdditive(autoTuneState, incomingAutoTune);
       const mergedPatterns = mergePatternMemoryAdditive(layoutPatternMemory, incomingPatterns);
+      const mergedScoreHistory = sanitizeScoreHistory([...(Array.isArray(scoreHistory) ? scoreHistory : []), ...incomingScoreHistory]);
 
       strategyWeights = mergedWeights;
       autoTuneState = mergedAutoTune;
       layoutPatternMemory = mergedPatterns;
+      scoreHistory = mergedScoreHistory;
       saveStrategyWeights(strategyWeights);
       saveAutoTuneState();
       saveLayoutPatternMemory();
+      saveScoreHistory();
+      void persistLearningCheckpoint('import');
 
       const weightCount = Object.keys(mergedWeights).length;
       const sampleText = Number.isFinite(Number(mergedAutoTune.samples)) ? mergedAutoTune.samples : 0;
       const patternCount = Array.isArray(mergedPatterns) ? mergedPatterns.length : 0;
       updateTrainingSnapshotText();
+      updateScoreTrendMonitor();
       setStatus('Training importiert.', `${weightCount} Gewichte aktiv | Samples ${sampleText} | Patterns ${patternCount}`, null);
     }
 
@@ -847,7 +1387,8 @@
       const bestAps = Number.isFinite(Number(autoTuneState?.bestAps)) ? Number(autoTuneState.bestAps).toFixed(2) : '-';
       const lastAps = Number.isFinite(Number(autoTuneState?.lastAps)) ? Number(autoTuneState.lastAps).toFixed(2) : '-';
       const patternCount = Array.isArray(layoutPatternMemory) ? layoutPatternMemory.length : 0;
-      trainingSnapshotTextEl.textContent = `Trainingstand: samples ${samples} | prefWorker ${pref} | APS best/last ${bestAps}/${lastAps} | Patterns ${patternCount}`;
+      const scoreCount = Array.isArray(scoreHistory) ? scoreHistory.length : 0;
+      trainingSnapshotTextEl.textContent = `Trainingstand: samples ${samples} | prefWorker ${pref} | APS best/last ${bestAps}/${lastAps} | Patterns ${patternCount} | Scores ${scoreCount}`;
     }
 
     function setLiveTuningText(text = null, force = false) {
@@ -857,6 +1398,47 @@
       liveTuningTextEl.textContent = text && String(text).trim() ? `Aktiv: ${text}` : 'Aktiv: -';
     }
 
+    function setTrainingMonitor(fields = {}) {
+      if (Object.prototype.hasOwnProperty.call(fields, 'mode')) monitorModeEl.textContent = fields.mode || '-';
+      if (Object.prototype.hasOwnProperty.call(fields, 'run')) monitorRunEl.textContent = fields.run || '-';
+      if (Object.prototype.hasOwnProperty.call(fields, 'queue')) monitorQueueEl.textContent = fields.queue || '-';
+      if (Object.prototype.hasOwnProperty.call(fields, 'aps')) monitorApsEl.textContent = fields.aps || '-';
+      if (Object.prototype.hasOwnProperty.call(fields, 'bestBox')) monitorBestBoxEl.textContent = fields.bestBox || '-';
+      if (Object.prototype.hasOwnProperty.call(fields, 'bestScore')) monitorBestScoreEl.textContent = fields.bestScore || '-';
+    }
+
+    function renderTrainingMonitorLog() {
+      monitorLogEl.innerHTML = '';
+      const list = trainingMonitorLog.length ? trainingMonitorLog : ['Noch kein Trainingslauf protokolliert.'];
+      list.forEach(text => {
+        const row = document.createElement('div');
+        row.className = 'monitor-log-entry';
+        row.textContent = text;
+        monitorLogEl.appendChild(row);
+      });
+    }
+
+    function pushTrainingMonitorEvent(text) {
+      const stamp = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      trainingMonitorLog.unshift(`${stamp} | ${text}`);
+      if (trainingMonitorLog.length > 8) trainingMonitorLog.length = 8;
+      renderTrainingMonitorLog();
+    }
+
+    function resetTrainingMonitor(mode = '-') {
+      setTrainingMonitor({
+        mode,
+        run: '-',
+        queue: '-',
+        aps: '-',
+        bestBox: '-',
+        bestScore: '-'
+      });
+      updateScoreTrendMonitor();
+      trainingMonitorLog = [];
+      renderTrainingMonitorLog();
+    }
+
     function setRunUi(active) {
       optimizeBtnEl.disabled = !!active;
       trainBtnEl.disabled = !!active;
@@ -864,6 +1446,8 @@
       exportTrainingBtnEl.disabled = !!active;
       importTrainingBtnEl.disabled = !!active;
       workerCountInputEl.disabled = !!active;
+      activeWorkerCountInputEl.disabled = !!active;
+      trainingModeSelectEl.disabled = !!active;
       thermalSafeInputEl.disabled = !!active;
     }
 
@@ -878,6 +1462,44 @@
       if (!runStartTimers.length) return;
       for (const t of runStartTimers) clearTimeout(t);
       runStartTimers = [];
+    }
+
+    function setRunQueueWake(callback, delayMs) {
+      clearRunStartTimers();
+      const delay = Math.max(0, Math.floor(Number(delayMs) || 0));
+      const timer = setTimeout(() => {
+        runStartTimers = runStartTimers.filter(t => t !== timer);
+        callback();
+      }, delay);
+      runStartTimers = [timer];
+    }
+
+    function launchQueuedWorkers() {
+      if (!activeRun || cancelRequested) return;
+      const runMeta = activeRun;
+      const now = Date.now();
+      while (runMeta.activeWorkers < runMeta.activeLimit && runMeta.idleWorkers.length) {
+        const nextJob = runMeta.workerJobs.find(job => !job.started && job.readyAt <= now);
+        if (!nextJob) break;
+        const nextWorker = runMeta.idleWorkers.shift();
+        if (!nextWorker) break;
+        nextJob.started = true;
+        nextJob.worker = nextWorker;
+        runMeta.activeWorkers++;
+        nextWorker.postMessage({
+          type: 'optimize',
+          payload: nextJob.payload
+        });
+      }
+      if (runMeta.activeWorkers >= runMeta.activeLimit) return;
+      const nextPending = runMeta.workerJobs
+        .filter(job => !job.started)
+        .sort((a, b) => a.readyAt - b.readyAt)[0];
+      if (!nextPending) return;
+      setRunQueueWake(() => {
+        if (!activeRun || activeRun.runId !== runMeta.runId) return;
+        launchQueuedWorkers();
+      }, Math.max(0, nextPending.readyAt - Date.now()));
     }
 
     function estimatedWorkload() {
@@ -902,6 +1524,79 @@
         if (c.fields) fieldCount += n * Math.max(0, Math.floor(Number(c.fields.count) || 0));
       }
       return { buildingCount, fieldCount };
+    }
+
+    function trainingRecoveryPauseMs(entry = null, durationMs = 0, finishedRuns = 0) {
+      const buildingCount = Math.max(0, Math.floor(Number(entry?.buildingCount) || 0));
+      const fieldCount = Math.max(0, Math.floor(Number(entry?.fieldCount) || 0));
+      const pressure = buildingCount + Math.floor(fieldCount / 45);
+      const profileId = String(entry?.profileId || '');
+      let pauseMs = TRAIN_PAUSE_MS;
+      if (pressure >= 70) pauseMs += 4000;
+      if (pressure >= 120) pauseMs += 6000;
+      if (pressure >= 180) pauseMs += 10000;
+      if (profileId === 'mittel') pauseMs += 3000;
+      if (profileId === 'komplex') pauseMs += 7000;
+      if (Number.isFinite(Number(durationMs))) {
+        const durationSec = Math.max(0, Number(durationMs) / 1000);
+        if (durationSec >= 10) pauseMs += 3000;
+        if (durationSec >= 18) pauseMs += 5000;
+        if (durationSec >= 30) pauseMs += 8000;
+      }
+      if (finishedRuns > 0 && (finishedRuns % 3) === 0) pauseMs += 6000;
+      if (thermalSafeMode) pauseMs += 4000;
+      return Math.max(TRAIN_PAUSE_MS, Math.min(45000, pauseMs));
+    }
+
+    function buildSoftStartPlan(workerCount, runLoad, thermalSafe = false) {
+      const count = Math.max(1, Math.floor(Number(workerCount) || 1));
+      if (count <= 1) return [0];
+      const load = runLoad || { buildingCount: 0, fieldCount: 0 };
+      const pressure = Math.max(0, (Number(load.buildingCount) || 0) + Math.floor((Number(load.fieldCount) || 0) / 60));
+      const batchSize = thermalSafe ? 1 : Math.max(1, Math.min(2, Math.floor((count + 1) / 4)));
+      const batchGap = thermalSafe ? 1800 : 1300;
+      const withinBatchGap = thermalSafe ? 650 : 420;
+      const totalWindow = Math.max(
+        RUN_SOFT_START_MIN_WINDOW_MS,
+        Math.min(
+          RUN_SOFT_START_MAX_WINDOW_MS,
+          Math.round(((Math.ceil(count / batchSize) - 1) * batchGap) + ((batchSize - 1) * withinBatchGap) + Math.min(2200, pressure * 18))
+        )
+      );
+      const delays = [];
+      for (let i = 0; i < count; i++) {
+        const batch = Math.floor(i / batchSize);
+        const slot = i % batchSize;
+        const baseDelay = batch * batchGap + slot * withinBatchGap;
+        const pressureTail = Math.round((count <= 1 ? 0 : (i / (count - 1))) * Math.min(1200, pressure * 10));
+        delays.push(Math.min(totalWindow, baseDelay + pressureTail));
+      }
+      return delays;
+    }
+
+    function buildSoftStartWarmupPlan(startPlan, runLoad, thermalSafe = false) {
+      const delays = Array.isArray(startPlan) ? startPlan.slice() : [0];
+      const count = Math.max(1, delays.length);
+      const load = runLoad || { buildingCount: 0, fieldCount: 0 };
+      const pressure = Math.max(0, (Number(load.buildingCount) || 0) + Math.floor((Number(load.fieldCount) || 0) / 55));
+      const maxDelay = delays.length ? Math.max(...delays) : 0;
+      return delays.map((delay, idx) => {
+        const delayShare = maxDelay > 0 ? Math.min(1, Math.max(0, delay / maxDelay)) : (count <= 1 ? 1 : idx / Math.max(1, count - 1));
+        const startIntensityBase = thermalSafe ? 0.34 : 0.44;
+        const intensityBoost = delayShare * (thermalSafe ? 0.66 : 0.56);
+        const pressurePenalty = Math.min(0.1, pressure * 0.0025);
+        const warmupIntensity = Math.max(0.3, Math.min(1, startIntensityBase + intensityBoost - pressurePenalty));
+        const warmupCandidates = Math.max(
+          1,
+          Math.min(
+            5,
+            (thermalSafe ? 3 : 2)
+              + Math.floor((1 - delayShare) * 2)
+              + (pressure >= 10 ? 1 : 0)
+          )
+        );
+        return { warmupIntensity, warmupCandidates };
+      });
     }
 
     function makeSeededRnd(seed) {
@@ -1041,6 +1736,51 @@
       return out;
     }
 
+    function chainLabelsForCounts(countsForRun) {
+      const labels = [];
+      for (const ch of trainingChainsAvailable()) {
+        let used = true;
+        for (const cp of ch.components) {
+          const have = Math.max(0, Math.floor(Number(countsForRun?.[cp.id]) || 0));
+          const need = Math.max(1, Math.floor(Number(cp.ratio) || 1));
+          if (have < need) {
+            used = false;
+            break;
+          }
+        }
+        if (used) labels.push(ch.label);
+      }
+      return labels;
+    }
+
+    function normalizeTargetedTrainingCounts(inputCounts) {
+      const normalized = sanitizeCountsObject(inputCounts || {});
+      const hasAny = Object.entries(normalized).some(([id, n]) => id !== 'infra_lagerhaus' && (Number(n) || 0) > 0);
+      if (!hasAny) return null;
+      normalized.infra_lagerhaus = Math.max(1, Math.floor(Number(normalized.infra_lagerhaus) || 0));
+      return normalized;
+    }
+
+    function buildTargetedTrainingRunPlan(totalRuns, baseCounts) {
+      const normalizedCounts = normalizeTargetedTrainingCounts(baseCounts);
+      if (!normalizedCounts) return [];
+      const summary = summarizeCountsMap(normalizedCounts);
+      const chainLabels = chainLabelsForCounts(normalizedCounts);
+      const plan = [];
+      for (let i = 0; i < totalRuns; i++) {
+        plan.push({
+          index: i,
+          profileId: 'targeted',
+          profileLabel: 'gezielt',
+          counts: { ...normalizedCounts },
+          buildingCount: summary.buildingCount,
+          fieldCount: summary.fieldCount,
+          chainLabels
+        });
+      }
+      return plan;
+    }
+
     function buildTrainingRunPlan(totalRuns, seed = Date.now()) {
       const rnd = makeSeededRnd(seed >>> 0);
       const plan = [];
@@ -1063,14 +1803,7 @@
         }
         seenCombos.add(sig);
         const summary = summarizeCountsMap(countsForRun);
-        const chainLabels = [];
-        for (const ch of availableChains) {
-          let used = true;
-          for (const cp of ch.components) {
-            if (Math.max(0, Math.floor(Number(countsForRun[cp.id]) || 0)) < Math.max(1, Math.floor(Number(cp.ratio) || 1))) { used = false; break; }
-          }
-          if (used) chainLabels.push(ch.label);
-        }
+        const chainLabels = chainLabelsForCounts(countsForRun);
         plan.push({
           index: i,
           profileId: profile.id,
@@ -1188,6 +1921,78 @@
       return out;
     }
 
+    function solutionSeedFingerprint(seed) {
+      if (!seed || !Array.isArray(seed.items)) return '';
+      return seed.items
+        .map(it => `${it.id}:${it.occ}:${it.x},${it.y},${it.rot},${it.order}`)
+        .sort()
+        .join('|');
+    }
+
+    function extractSolutionSeed(sol, runCounts = null) {
+      if (!sol || !Array.isArray(sol.items)) return null;
+      const catalogById = new Map(CATALOG.map(c => [c.id, c]));
+      const buildings = sol.items.filter(it => it && it.kind === 'building' && catalogById.has(String(it.id || '')));
+      if (buildings.length < 2) return null;
+      const minX = Math.min(...buildings.map(b => Number(b.x) || 0));
+      const minY = Math.min(...buildings.map(b => Number(b.y) || 0));
+      const countMap = {};
+      const occMap = new Map();
+      const items = [];
+      for (const b of buildings.slice().sort((a, b) => (a.y - b.y) || (a.x - b.x) || String(a.id || '').localeCompare(String(b.id || '')))) {
+        const id = String(b.id || '');
+        const base = catalogById.get(id);
+        if (!base) continue;
+        const occ = occMap.get(id) || 0;
+        occMap.set(id, occ + 1);
+        countMap[id] = (countMap[id] || 0) + 1;
+        const rot = (base.w !== base.h && Number(b.w) === Number(base.h) && Number(b.h) === Number(base.w)) ? 1 : 0;
+        items.push({
+          id,
+          occ,
+          x: Math.round((Number(b.x) || 0) - minX),
+          y: Math.round((Number(b.y) || 0) - minY),
+          rot,
+          order: items.length
+        });
+      }
+      if (items.length < 2) return null;
+      if (runCounts && typeof runCounts === 'object') {
+        for (const c of CATALOG) {
+          const want = Math.max(0, Math.floor(Number(runCounts[c.id]) || 0));
+          const got = Math.max(0, Math.floor(Number(countMap[c.id]) || 0));
+          if (want !== got) return null;
+        }
+      }
+      return {
+        items,
+        countMap,
+        sourceScore: Number.isFinite(Number(sol.score)) ? Number(sol.score) : null,
+        createdAt: new Date().toISOString()
+      };
+    }
+
+    function buildSolutionSeedsForCounts(runCounts, sourceSolutions, maxSeeds = 4) {
+      const list = Array.isArray(sourceSolutions) ? sourceSolutions : [];
+      const out = [];
+      const seen = new Set();
+      const scored = [];
+      for (const sol of list) {
+        const seed = extractSolutionSeed(sol, runCounts);
+        if (!seed) continue;
+        const fp = solutionSeedFingerprint(seed);
+        if (!fp || seen.has(fp)) continue;
+        seen.add(fp);
+        scored.push({ seed, score: Number.isFinite(Number(seed.sourceScore)) ? Number(seed.sourceScore) : 9e9 });
+      }
+      scored.sort((a, b) => a.score - b.score);
+      for (const entry of scored) {
+        if (out.length >= maxSeeds) break;
+        out.push(entry.seed);
+      }
+      return out;
+    }
+
     function adaptiveBaseWorkers() {
       const cores = Math.max(1, Math.floor(Number(navigator.hardwareConcurrency) || 4));
       const deviceMemory = Number(navigator.deviceMemory);
@@ -1223,8 +2028,9 @@
       const simpleCap = simpleLayout ? 8 : 14;
       if (workerOverride > 0) {
         let fixed = Math.max(1, Math.min(14, workerOverride));
+        if (isTrainingRun) fixed = Math.min(fixed, 2);
         if (simpleLayout && !isTrainingRun) fixed = Math.min(fixed, simpleCap);
-        if (thermalSafeMode) fixed = Math.min(fixed, isTrainingRun ? 5 : 6);
+        if (thermalSafeMode) fixed = Math.min(fixed, isTrainingRun ? 1 : 4);
         return fixed;
       }
       const base = adaptiveBaseWorkers();
@@ -1250,18 +2056,45 @@
       if (simpleLayout && !isTrainingRun) cap = Math.min(cap, simpleCap);
       if (isTrainingRun) {
         const isComplexProfile = String(trainingProfileId || '') === 'komplex';
-        const trainMax = isComplexProfile ? 9 : 8;
-        const trainMin = isComplexProfile ? 6 : 4;
+        const trainMax = isComplexProfile ? 2 : 2;
+        const trainMin = 1;
         cap = Math.min(cap, Math.min(hwCap, trainMax));
         cap = Math.max(Math.min(hwCap, trainMin), cap);
       }
-      if (thermalSafeMode) cap = Math.min(cap, isTrainingRun ? 5 : 6);
+      if (thermalSafeMode) cap = Math.min(cap, isTrainingRun ? 1 : 4);
       return Math.max(1, Math.min(14, cap));
     }
 
+    function optimizerActiveWorkerCount(totalWorkers, isTrainingRun = false, workloadOverride = null, trainingProfileId = '') {
+      const total = Math.max(1, Math.min(14, Math.floor(Number(totalWorkers) || 1)));
+      if (activeWorkerOverride > 0) {
+        const hardCap = isTrainingRun ? 1 : activeWorkerOverride;
+        return Math.max(1, Math.min(total, hardCap));
+      }
+      const load = workloadOverride || estimatedWorkload();
+      const pressure = Math.max(0, load.buildingCount + Math.floor(load.fieldCount / 55));
+      const isComplexProfile = String(trainingProfileId || '') === 'komplex';
+      if (isTrainingRun) return 1;
+      let cap = thermalSafeMode ? 2 : 3;
+      if (pressure >= 150 || isComplexProfile) cap = thermalSafeMode ? 2 : 3;
+      else if (pressure <= 40 && !isTrainingRun) cap = thermalSafeMode ? 2 : 2;
+      return Math.max(1, Math.min(total, cap));
+    }
+
     function terminateWorkerPool() {
+      clearRunStartTimers();
       for (const w of workerPool) w.terminate();
       workerPool = [];
+    }
+
+    function replaceWorkerInstance(oldWorker) {
+      if (!oldWorker) return createOptimizerWorker();
+      const idx = workerPool.indexOf(oldWorker);
+      try { oldWorker.terminate(); } catch {}
+      const freshWorker = createOptimizerWorker();
+      if (idx >= 0) workerPool[idx] = freshWorker;
+      else workerPool.push(freshWorker);
+      return freshWorker;
     }
 
     function ensureWorkerPool(size) {
@@ -1353,7 +2186,8 @@
     function createOptimizerWorker() {
       if (workerUrl) {
         const nextWorker = new Worker(workerUrl);
-        nextWorker.onmessage = handleWorkerMessage;
+        nextWorker.__jobCount = 0;
+        nextWorker.onmessage = ev => handleWorkerMessage(ev, nextWorker);
         return nextWorker;
       }
       const workerSource = `
@@ -1419,7 +2253,15 @@
           'island_chain_cluster',
           'radial_hub_spoke',
           'roadtree_compact',
-          'local_repair_seed'
+          'local_repair_seed',
+          'layout_refine_seed',
+          'random_feasible_bootstrap',
+          'chain_module_stack',
+          'serpentine_rows_gap1',
+          'dual_islands_split',
+          'perimeter_sweep',
+          'warehouse_spine',
+          'corners_inward'
         ];
 
         function clamp(v, lo, hi) {
@@ -1517,6 +2359,17 @@
             add('radial_hub_spoke', 0.22);
             add('roadtree_compact', 0.18);
             add('local_repair_seed', 0.1);
+            add('layout_refine_seed', 0.16);
+            add('random_feasible_bootstrap', 0.12);
+            add('chain_module_stack', 0.3);
+            add('dual_islands_split', 0.2);
+            add('warehouse_spine', 0.18);
+            add('perimeter_sweep', 0.12);
+          }
+          if (ctx.sheep > 0) {
+            add('chain_module_stack', 0.32);
+            add('warehouse_spine', 0.12);
+            add('roadtree_compact', 0.08);
           }
           if (ctx.tileFarms >= 2) {
             add('row_area_gap1', 0.22);
@@ -1524,6 +2377,9 @@
             add('col_area_gap0', 0.22);
             add('row_fieldheavy_gap1', 0.14);
             add('radial_hub_spoke', 0.18);
+            add('random_feasible_bootstrap', 0.16);
+            add('serpentine_rows_gap1', 0.16);
+            add('perimeter_sweep', 0.14);
           }
           if (ctx.isMixed) {
             add('row_chain_gap1', 0.2);
@@ -1533,15 +2389,23 @@
             add('island_chain_cluster', 0.26);
             add('roadtree_compact', 0.2);
             add('local_repair_seed', 0.16);
+            add('layout_refine_seed', 0.22);
+            add('random_feasible_bootstrap', 0.24);
+            add('dual_islands_split', 0.28);
+            add('warehouse_spine', 0.2);
+            add('corners_inward', 0.12);
           }
           if (ctx.hasLargeFootprints) {
             add('row_perimeter_gap0', 0.24);
             add('row_area_gap0', 0.12);
             add('col_area_gap0', 0.1);
+            add('corners_inward', 0.22);
+            add('perimeter_sweep', 0.18);
           }
           if (ctx.wide > ctx.tall + 1) {
             add('row_width_gap0', 0.24);
             add('col_height_gap0', 0.12);
+            add('serpentine_rows_gap1', 0.18);
           } else if (ctx.tall > ctx.wide + 1) {
             add('row_height_gap0', 0.24);
             add('col_width_gap0', 0.12);
@@ -1551,6 +2415,8 @@
             add('col_area_gap0', 0.14);
             add('row_square_gap0', 0.12);
             add('roadtree_compact', 0.16);
+            add('warehouse_spine', 0.22);
+            add('layout_refine_seed', 0.12);
           }
           if (!ctx.isFarmHeavy) {
             add('row_fieldheavy_gap1', -0.2);
@@ -1594,9 +2460,25 @@
             strategy === 'island_chain_cluster' ||
             strategy === 'radial_hub_spoke' ||
             strategy === 'roadtree_compact' ||
-            strategy === 'local_repair_seed'
+            strategy === 'local_repair_seed' ||
+            strategy === 'layout_refine_seed' ||
+            strategy === 'chain_module_stack' ||
+            strategy === 'dual_islands_split' ||
+            strategy === 'warehouse_spine'
           ) {
             copy.sort((a, b) => chainPriorityScore(b) - chainPriorityScore(a) || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
+            return copy;
+          }
+          if (strategy === 'corners_inward') {
+            copy.sort((a, b) => (b.w * b.h) - (a.w * a.h) || ((b.w + b.h) - (a.w + a.h)) || a.jitter - b.jitter);
+            return copy;
+          }
+          if (strategy === 'serpentine_rows_gap1') {
+            copy.sort((a, b) => b.w - a.w || b.h - a.h || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
+            return copy;
+          }
+          if (strategy === 'perimeter_sweep') {
+            copy.sort((a, b) => ((b.w * 2 + b.h * 2) - (a.w * 2 + a.h * 2)) || (b.w * b.h) - (a.w * a.h) || a.jitter - b.jitter);
             return copy;
           }
           if (strategy === 'row_fieldheavy_gap1') {
@@ -1868,9 +2750,475 @@
           return placed.length === buildings.length ? placed : null;
         }
 
+        function packSerpentineRows(buildings, w, h, gap) {
+          const innerW = w - 2, innerH = h - 2;
+          if (innerW < 6 || innerH < 6) return null;
+          const placed = [];
+          let rowY = 1;
+          let rowH = 0;
+          let leftToRight = true;
+          let x = 1;
+          for (const b of buildings) {
+            const variants = buildingVariants(b);
+            const rowMaxX = 1 + innerW;
+            const rowMaxY = 1 + innerH;
+            const tryPick = () => {
+              let best = null;
+              for (const v of variants) {
+                if (rowY + v.h > rowMaxY) continue;
+                const nx = leftToRight ? x : (x - v.w);
+                if (nx < 1 || nx + v.w > rowMaxX) continue;
+                const score = Math.abs(v.w - v.h) + v.h * 0.1;
+                if (!best || score < best.score) best = { item: v, x: nx, score };
+              }
+              return best;
+            };
+            let pick = tryPick();
+            if (!pick) {
+              rowY += rowH + gap;
+              rowH = 0;
+              leftToRight = !leftToRight;
+              x = leftToRight ? 1 : (1 + innerW);
+              pick = tryPick();
+            }
+            if (!pick) return null;
+            placed.push({ ...pick.item, x: pick.x, y: rowY });
+            rowH = Math.max(rowH, pick.item.h);
+            x = leftToRight ? (pick.x + pick.item.w + gap) : (pick.x - gap);
+          }
+          return placed;
+        }
+
+        function packDualIslands(buildings, w, h, rnd) {
+          const innerW = w - 2, innerH = h - 2;
+          if (innerW < 10 || innerH < 8) return null;
+          const minX = 1, minY = 1, maxX = w - 1, maxY = h - 1;
+          const occ = Array.from({ length: w }, () => Array(h).fill(false));
+          const placed = [];
+          const warehouse = buildings.find(b => b.id === 'infra_lagerhaus') || buildings[0];
+          if (!warehouse) return null;
+          const whVar = buildingVariants(warehouse)[0];
+          const whPos = placeNear(occ, whVar.w, whVar.h, Math.floor((w - whVar.w) / 2), Math.floor((h - whVar.h) / 2), minX, minY, maxX, maxY, 16);
+          if (!whPos) return null;
+          paintOcc(occ, whPos.x, whPos.y, whVar.w, whVar.h);
+          placed.push({ ...warehouse, w: whVar.w, h: whVar.h, x: whPos.x, y: whPos.y });
+          const leftAnchor = { x: Math.max(3, whPos.x - 8), y: whPos.y + Math.floor(whVar.h / 2) };
+          const rightAnchor = { x: Math.min(w - 4, whPos.x + whVar.w + 8), y: whPos.y + Math.floor(whVar.h / 2) };
+          const groups = new Map();
+          for (const b of buildings) {
+            if (b.uid === warehouse.uid) continue;
+            const gk = chainGroupKey(b);
+            if (!groups.has(gk)) groups.set(gk, []);
+            groups.get(gk).push(b);
+          }
+          const groupList = [...groups.values()].sort((a, b) => b.length - a.length);
+          for (let gi = 0; gi < groupList.length; gi++) {
+            const anchor = (gi % 2 === 0) ? leftAnchor : rightAnchor;
+            const verticalDir = (Math.floor(gi / 2) % 2 === 0) ? 1 : -1;
+            const chain = groupList[gi].slice().sort((a, b) => chainPriorityScore(b) - chainPriorityScore(a));
+            for (let i = 0; i < chain.length; i++) {
+              const b = chain[i];
+              let best = null;
+              let bestDist = Infinity;
+              for (const v of buildingVariants(b)) {
+                const tx = anchor.x + Math.floor((rnd() * 3) - 1);
+                const ty = anchor.y + verticalDir * (i * 5 + Math.floor((rnd() * 3) - 1));
+                const pos = placeNear(occ, v.w, v.h, tx, ty, minX, minY, maxX, maxY, 10);
+                if (!pos) continue;
+                const d = Math.abs(pos.x - anchor.x) + Math.abs(pos.y - anchor.y);
+                if (d < bestDist) {
+                  bestDist = d;
+                  best = { v, pos };
+                }
+              }
+              if (!best) return null;
+              paintOcc(occ, best.pos.x, best.pos.y, best.v.w, best.v.h);
+              placed.push({ ...b, w: best.v.w, h: best.v.h, x: best.pos.x, y: best.pos.y });
+            }
+          }
+          return placed.length === buildings.length ? placed : null;
+        }
+
+        function packPerimeterSweep(buildings, w, h, rnd) {
+          const innerW = w - 2, innerH = h - 2;
+          if (innerW < 8 || innerH < 8) return null;
+          const occ = Array.from({ length: w }, () => Array(h).fill(false));
+          const placed = [];
+          let left = 1, top = 1, right = w - 1, bottom = h - 1;
+          const sides = ['top', 'right', 'bottom', 'left'];
+          let sideIdx = 0;
+          for (const b of buildings) {
+            let placedOne = false;
+            for (let attempt = 0; attempt < 16 && !placedOne; attempt++) {
+              const side = sides[(sideIdx + attempt) % sides.length];
+              for (const v of buildingVariants(b)) {
+                let tx = left, ty = top;
+                if (side === 'top') {
+                  tx = left + Math.max(0, Math.floor((right - left - v.w) / 2));
+                  ty = top;
+                } else if (side === 'right') {
+                  tx = right - v.w;
+                  ty = top + Math.max(0, Math.floor((bottom - top - v.h) / 2));
+                } else if (side === 'bottom') {
+                  tx = left + Math.max(0, Math.floor((right - left - v.w) / 2));
+                  ty = bottom - v.h;
+                } else {
+                  tx = left;
+                  ty = top + Math.max(0, Math.floor((bottom - top - v.h) / 2));
+                }
+                const pos = placeNear(occ, v.w, v.h, tx, ty, 1, 1, w - 1, h - 1, 8);
+                if (!pos) continue;
+                paintOcc(occ, pos.x, pos.y, v.w, v.h);
+                placed.push({ ...b, w: v.w, h: v.h, x: pos.x, y: pos.y });
+                placedOne = true;
+                sideIdx = (sides.indexOf(side) + 1) % sides.length;
+                if (side === 'top') top = Math.min(bottom - 1, top + Math.max(1, v.h));
+                else if (side === 'right') right = Math.max(left + 1, right - Math.max(1, v.w));
+                else if (side === 'bottom') bottom = Math.max(top + 1, bottom - Math.max(1, v.h));
+                else left = Math.min(right - 1, left + Math.max(1, v.w));
+                break;
+              }
+            }
+            if (!placedOne) return null;
+          }
+          return placed;
+        }
+
+        function packWarehouseSpine(buildings, w, h, rnd) {
+          const innerW = w - 2, innerH = h - 2;
+          if (innerW < 8 || innerH < 8) return null;
+          const minX = 1, minY = 1, maxX = w - 1, maxY = h - 1;
+          const occ = Array.from({ length: w }, () => Array(h).fill(false));
+          const placed = [];
+          const warehouse = buildings.find(b => b.id === 'infra_lagerhaus') || buildings[0];
+          if (!warehouse) return null;
+          const whVar = buildingVariants(warehouse)[0];
+          const whPos = placeNear(occ, whVar.w, whVar.h, 1 + Math.floor(innerW * 0.32), Math.floor((h - whVar.h) / 2), minX, minY, maxX, maxY, 16);
+          if (!whPos) return null;
+          paintOcc(occ, whPos.x, whPos.y, whVar.w, whVar.h);
+          placed.push({ ...warehouse, w: whVar.w, h: whVar.h, x: whPos.x, y: whPos.y });
+          const spineX = whPos.x + whVar.w + 2;
+          const rest = buildings.filter(b => b.uid !== warehouse.uid);
+          let upperY = whPos.y;
+          let lowerY = whPos.y + whVar.h + 1;
+          for (let i = 0; i < rest.length; i++) {
+            const b = rest[i];
+            const variants = buildingVariants(b);
+            let best = null;
+            let bestCost = Infinity;
+            for (const v of variants) {
+              const upperPos = placeNear(occ, v.w, v.h, spineX + (Math.floor(i / 2) * 4), upperY - v.h - 1, minX, minY, maxX, maxY, 8);
+              if (upperPos) {
+                const cost = Math.abs((upperPos.x - spineX)) + Math.abs((upperPos.y + v.h) - upperY);
+                if (cost < bestCost) { bestCost = cost; best = { v, pos: upperPos, side: 'upper' }; }
+              }
+              const lowerPos = placeNear(occ, v.w, v.h, spineX + (Math.floor(i / 2) * 4), lowerY + 1, minX, minY, maxX, maxY, 8);
+              if (lowerPos) {
+                const cost = Math.abs((lowerPos.x - spineX)) + Math.abs(lowerPos.y - lowerY);
+                if (cost < bestCost) { bestCost = cost; best = { v, pos: lowerPos, side: 'lower' }; }
+              }
+            }
+            if (!best) return null;
+            paintOcc(occ, best.pos.x, best.pos.y, best.v.w, best.v.h);
+            placed.push({ ...b, w: best.v.w, h: best.v.h, x: best.pos.x, y: best.pos.y });
+            if (best.side === 'upper') upperY = Math.min(upperY, best.pos.y);
+            else lowerY = Math.max(lowerY, best.pos.y + best.v.h);
+          }
+          return placed.length === buildings.length ? placed : null;
+        }
+
+        function packCornersInward(buildings, w, h, rnd) {
+          const innerW = w - 2, innerH = h - 2;
+          if (innerW < 8 || innerH < 8) return null;
+          const occ = Array.from({ length: w }, () => Array(h).fill(false));
+          const placed = [];
+          const corners = [
+            { x: 1, y: 1 },
+            { x: w - 2, y: 1 },
+            { x: w - 2, y: h - 2 },
+            { x: 1, y: h - 2 }
+          ];
+          for (let i = 0; i < buildings.length; i++) {
+            const b = buildings[i];
+            const target = corners[i % corners.length];
+            let best = null;
+            let bestDist = Infinity;
+            for (const v of buildingVariants(b)) {
+              const tx = target.x - ((target.x > (w / 2)) ? v.w : 0);
+              const ty = target.y - ((target.y > (h / 2)) ? v.h : 0);
+              const pos = placeNear(occ, v.w, v.h, tx, ty, 1, 1, w - 1, h - 1, 12);
+              if (!pos) continue;
+              const d = Math.abs(pos.x - tx) + Math.abs(pos.y - ty);
+              if (d < bestDist) {
+                bestDist = d;
+                best = { v, pos };
+              }
+            }
+            if (!best) return null;
+            paintOcc(occ, best.pos.x, best.pos.y, best.v.w, best.v.h);
+            placed.push({ ...b, w: best.v.w, h: best.v.h, x: best.pos.x, y: best.pos.y });
+          }
+          return placed;
+        }
+
+        function packRandomFeasibleBootstrap(buildings, w, h, rnd) {
+          const innerW = w - 2, innerH = h - 2;
+          if (innerW < 8 || innerH < 8) return null;
+          const minX = 1, minY = 1, maxX = w - 1, maxY = h - 1;
+          const occ = Array.from({ length: w }, () => Array(h).fill(false));
+          const placed = [];
+          const warehouse = buildings.find(b => b.id === 'infra_lagerhaus') || buildings[0];
+          if (!warehouse) return null;
+          const whVariants = buildingVariants(warehouse);
+          const whVar = whVariants[Math.floor(rnd() * whVariants.length)] || whVariants[0];
+          const whPos = placeNear(
+            occ,
+            whVar.w,
+            whVar.h,
+            Math.floor((w - whVar.w) / 2 + ((rnd() - 0.5) * 6)),
+            Math.floor((h - whVar.h) / 2 + ((rnd() - 0.5) * 6)),
+            minX,
+            minY,
+            maxX,
+            maxY,
+            16
+          );
+          if (!whPos) return null;
+          paintOcc(occ, whPos.x, whPos.y, whVar.w, whVar.h);
+          placed.push({ ...warehouse, w: whVar.w, h: whVar.h, x: whPos.x, y: whPos.y });
+
+          const whCx = whPos.x + Math.floor(whVar.w / 2);
+          const whCy = whPos.y + Math.floor(whVar.h / 2);
+          const anchors = [
+            { x: whCx, y: whCy },
+            { x: 2, y: 2 },
+            { x: w - 3, y: 2 },
+            { x: w - 3, y: h - 3 },
+            { x: 2, y: h - 3 },
+            { x: whCx + 7, y: whCy },
+            { x: whCx - 7, y: whCy },
+            { x: whCx, y: whCy + 7 },
+            { x: whCx, y: whCy - 7 }
+          ];
+          const rest = buildings
+            .filter(b => b.uid !== warehouse.uid)
+            .slice()
+            .sort((a, b) => (chainPriorityScore(b) - chainPriorityScore(a)) || ((b.w * b.h) - (a.w * a.h)) || (rnd() - 0.5));
+          for (let i = 0; i < rest.length; i++) {
+            const b = rest[i];
+            const variants = buildingVariants(b).slice().sort(() => rnd() - 0.5);
+            let best = null;
+            let bestCost = Infinity;
+            for (let attempt = 0; attempt < 24; attempt++) {
+              const anchor = anchors[(i + attempt + Math.floor(rnd() * anchors.length)) % anchors.length];
+              const radius = 4 + Math.floor(i / 2) * 2 + Math.floor(rnd() * 4);
+              for (const v of variants) {
+                const tx = Math.round(anchor.x + ((rnd() * 2 - 1) * radius) - (v.w / 2));
+                const ty = Math.round(anchor.y + ((rnd() * 2 - 1) * radius) - (v.h / 2));
+                const pos = placeNear(occ, v.w, v.h, tx, ty, minX, minY, maxX, maxY, Math.min(18, 8 + radius));
+                if (!pos) continue;
+                const pcx = pos.x + Math.floor(v.w / 2);
+                const pcy = pos.y + Math.floor(v.h / 2);
+                const dAnchor = Math.abs(pcx - anchor.x) + Math.abs(pcy - anchor.y);
+                const dWh = Math.abs(pcx - whCx) + Math.abs(pcy - whCy);
+                const areaBias = b.fields ? 0.85 : 1;
+                const cost = dAnchor * 1.3 + dWh * 0.25 * areaBias + rnd() * 2.5;
+                if (cost < bestCost) {
+                  bestCost = cost;
+                  best = { v, pos };
+                }
+              }
+            }
+            if (!best) {
+              for (const v of variants) {
+                for (let fallback = 0; fallback < 24; fallback++) {
+                  const tx = Math.floor(1 + rnd() * Math.max(1, innerW - v.w));
+                  const ty = Math.floor(1 + rnd() * Math.max(1, innerH - v.h));
+                  const pos = placeNear(occ, v.w, v.h, tx, ty, minX, minY, maxX, maxY, 14);
+                  if (!pos) continue;
+                  best = { v, pos };
+                  break;
+                }
+                if (best) break;
+              }
+            }
+            if (!best) return null;
+            paintOcc(occ, best.pos.x, best.pos.y, best.v.w, best.v.h);
+            placed.push({ ...b, w: best.v.w, h: best.v.h, x: best.pos.x, y: best.pos.y });
+            anchors.push({
+              x: best.pos.x + Math.floor(best.v.w / 2),
+              y: best.pos.y + Math.floor(best.v.h / 2)
+            });
+          }
+          return placed.length === buildings.length ? placed : null;
+        }
+
+        function moduleProcessorTarget(groupKey, farmCount, procCount) {
+          if (groupKey === 'pilei') return Math.min(2, Math.max(1, procCount));
+          if (groupKey === 'sandalen') return Math.min(2, Math.max(1, procCount));
+          if (groupKey === 'brot') return Math.min(2, Math.max(1, procCount));
+          return Math.min(2, Math.max(1, procCount > farmCount ? 2 : 1));
+        }
+
+        function buildChainModules(groupKey, list) {
+          const farms = list.filter(b => !!b.fields).slice().sort((a, b) => chainPriorityScore(b) - chainPriorityScore(a));
+          const procs = list.filter(b => !b.fields).slice().sort((a, b) => chainPriorityScore(b) - chainPriorityScore(a));
+          const modules = [];
+          const targetProc = moduleProcessorTarget(groupKey, farms.length, procs.length);
+          while (farms.length) {
+            const moduleItems = [farms.shift()];
+            for (let i = 0; i < targetProc && procs.length; i++) moduleItems.push(procs.shift());
+            modules.push({ groupKey, items: moduleItems });
+          }
+          while (procs.length) modules.push({ groupKey, items: [procs.shift()] });
+          return modules;
+        }
+
+        function packChainModuleStack(buildings, w, h, rnd) {
+          const innerW = w - 2, innerH = h - 2;
+          if (innerW < 10 || innerH < 10) return null;
+          const minX = 1, minY = 1, maxX = w - 1, maxY = h - 1;
+          const occ = Array.from({ length: w }, () => Array(h).fill(false));
+          const placed = [];
+          const warehouse = buildings.find(b => b.id === 'infra_lagerhaus') || buildings[0];
+          if (!warehouse) return null;
+          const whVar = buildingVariants(warehouse)[0];
+          const whPos = placeNear(occ, whVar.w, whVar.h, Math.floor((w - whVar.w) / 2), Math.floor((h - whVar.h) / 2), minX, minY, maxX, maxY, 18);
+          if (!whPos) return null;
+          paintOcc(occ, whPos.x, whPos.y, whVar.w, whVar.h);
+          placed.push({ ...warehouse, w: whVar.w, h: whVar.h, x: whPos.x, y: whPos.y });
+
+          const groups = new Map();
+          for (const b of buildings) {
+            if (b.uid === warehouse.uid) continue;
+            const gk = chainGroupKey(b);
+            if (!groups.has(gk)) groups.set(gk, []);
+            groups.get(gk).push(b);
+          }
+          const groupList = [...groups.entries()]
+            .map(([groupKey, list]) => ({ groupKey, list, modules: buildChainModules(groupKey, list) }))
+            .sort((a, b) => b.modules.length - a.modules.length || b.list.length - a.list.length || a.groupKey.localeCompare(b.groupKey));
+
+          const moduleAnchors = [
+            { x: whPos.x + whVar.w + 2, side: 'right' },
+            { x: Math.max(1, whPos.x - 10), side: 'left' },
+            { x: whPos.x + whVar.w + 8, side: 'right' },
+            { x: Math.max(1, whPos.x - 16), side: 'left' }
+          ];
+          let cursorY = 2;
+          let anchorIndex = 0;
+
+          const placeModule = (module, anchorSpec, baseY) => {
+            const items = module.items || [];
+            if (!items.length) return { ok: false };
+            const farm = items.find(it => !!it.fields) || items[0];
+            const processors = items.filter(it => it.uid !== farm.uid);
+            const horizontal = anchorSpec.side === 'right';
+            const placedLocal = [];
+            const localOcc = new Set();
+            let localBottom = baseY;
+            const canPlaceLocal = (x, y, bw, bh) => {
+              if (x < minX || y < minY || x + bw > maxX || y + bh > maxY) return false;
+              for (let yy = y; yy < y + bh; yy++) {
+                for (let xx = x; xx < x + bw; xx++) {
+                  if (occ[xx][yy] || localOcc.has(key(xx, yy))) return false;
+                }
+              }
+              return true;
+            };
+            const reserveLocal = (x, y, bw, bh) => {
+              for (let yy = y; yy < y + bh; yy++) {
+                for (let xx = x; xx < x + bw; xx++) localOcc.add(key(xx, yy));
+              }
+            };
+            const placeNearLocal = (bw, bh, sx, sy, radius = 9) => {
+              const px = Math.max(minX, Math.min(maxX - bw, Math.round(sx)));
+              const py = Math.max(minY, Math.min(maxY - bh, Math.round(sy)));
+              if (canPlaceLocal(px, py, bw, bh)) return { x: px, y: py };
+              for (let r = 1; r <= radius; r++) {
+                for (let dy = -r; dy <= r; dy++) {
+                  for (let dx = -r; dx <= r; dx++) {
+                    if (Math.abs(dx) + Math.abs(dy) !== r) continue;
+                    const x = px + dx;
+                    const y = py + dy;
+                    if (canPlaceLocal(x, y, bw, bh)) return { x, y };
+                  }
+                }
+              }
+              return null;
+            };
+
+            const farmVariant = buildingVariants(farm)[0];
+            const farmX = horizontal ? anchorSpec.x : Math.max(1, anchorSpec.x - farmVariant.w + 1);
+            const farmPos = placeNearLocal(farmVariant.w, farmVariant.h, farmX, baseY, 9);
+            if (!farmPos) return { ok: false };
+            reserveLocal(farmPos.x, farmPos.y, farmVariant.w, farmVariant.h);
+            placedLocal.push({ ...farm, w: farmVariant.w, h: farmVariant.h, x: farmPos.x, y: farmPos.y });
+            localBottom = Math.max(localBottom, farmPos.y + farmVariant.h);
+
+            let procCursorY = farmPos.y;
+            const procBaseX = horizontal ? (farmPos.x + farmVariant.w + 1) : (farmPos.x - 4);
+            for (const proc of processors) {
+              let best = null;
+              let bestCost = Infinity;
+              for (const v of buildingVariants(proc)) {
+                const targetX = horizontal ? procBaseX : (procBaseX - v.w + 1);
+                const targetY = procCursorY;
+                const pos = placeNearLocal(v.w, v.h, targetX, targetY, 9);
+                if (!pos) continue;
+                const dy = Math.abs(pos.y - targetY);
+                const dx = Math.abs(pos.x - targetX);
+                const cost = dx * 1.6 + dy;
+                if (cost < bestCost) {
+                  bestCost = cost;
+                  best = { v, pos };
+                }
+              }
+              if (!best) return { ok: false };
+              reserveLocal(best.pos.x, best.pos.y, best.v.w, best.v.h);
+              placedLocal.push({ ...proc, w: best.v.w, h: best.v.h, x: best.pos.x, y: best.pos.y });
+              procCursorY = best.pos.y + best.v.h + 1;
+              localBottom = Math.max(localBottom, best.pos.y + best.v.h);
+            }
+            for (const it of placedLocal) paintOcc(occ, it.x, it.y, it.w, it.h);
+            return { ok: true, placedLocal, nextY: localBottom + 2 };
+          };
+
+          for (const group of groupList) {
+            for (const module of group.modules) {
+              let placedModule = null;
+              for (let attempt = 0; attempt < moduleAnchors.length; attempt++) {
+                const anchor = moduleAnchors[(anchorIndex + attempt) % moduleAnchors.length];
+                const testY = cursorY + (attempt > 1 ? Math.floor((attempt - 1) * 5) : 0);
+                const res = placeModule(module, anchor, testY);
+                if (res.ok) {
+                  placedModule = res;
+                  anchorIndex = (anchorIndex + attempt) % moduleAnchors.length;
+                  break;
+                }
+              }
+              if (!placedModule) return null;
+              placed.push(...placedModule.placedLocal);
+              cursorY = placedModule.nextY;
+              if (cursorY > (h - 10)) {
+                cursorY = 2;
+                anchorIndex = (anchorIndex + 1) % moduleAnchors.length;
+              }
+            }
+          }
+          return placed.length === buildings.length ? placed : null;
+        }
+
         function packWithStrategy(buildings, w, h, rnd, strategy) {
           const ordered = sortForStrategy(buildings, strategy, rnd);
           if (strategy === 'local_repair_seed') return packChainIslands(ordered, w, h, rnd) || packRadialHubSpoke(ordered, w, h, rnd, true);
+          if (strategy === 'random_feasible_bootstrap') return packRandomFeasibleBootstrap(ordered, w, h, rnd);
+          if (strategy === 'chain_module_stack') return packChainModuleStack(ordered, w, h, rnd) || packWarehouseSpine(ordered, w, h, rnd);
+          if (strategy === 'serpentine_rows_gap1') return packSerpentineRows(ordered, w, h, 1);
+          if (strategy === 'dual_islands_split') return packDualIslands(ordered, w, h, rnd);
+          if (strategy === 'perimeter_sweep') return packPerimeterSweep(ordered, w, h, rnd);
+          if (strategy === 'warehouse_spine') return packWarehouseSpine(ordered, w, h, rnd);
+          if (strategy === 'corners_inward') return packCornersInward(ordered, w, h, rnd);
           if (strategy === 'island_chain_cluster') return packChainIslands(ordered, w, h, rnd);
           if (strategy === 'radial_hub_spoke') return packRadialHubSpoke(ordered, w, h, rnd, false);
           if (strategy === 'roadtree_compact') return packRadialHubSpoke(ordered, w, h, rnd, true);
@@ -2958,6 +4306,7 @@
           const unused = Math.max(0, pads | 0);
           const buildings = items.filter(x => x.kind === 'building');
           const fields = items.filter(x => x.kind === 'field');
+          const occupiedArea = items.reduce((sum, it) => sum + Math.max(1, (it.w || 1) * (it.h || 1)), 0);
           const warehouse = buildings.find(b => b.id === 'infra_lagerhaus') || buildings[0] || null;
           const pigs = buildings.filter(b => (b.id && b.id.includes('schweinehof')) || (b.fields && b.fields.id === 'field_pigstall'));
           const processors = buildings.filter(b => {
@@ -2971,6 +4320,22 @@
             const dx = ax1 < bx0 ? (bx0 - ax1) : (bx1 < ax0 ? (ax0 - bx1) : 0);
             const dy = ay1 < by0 ? (by0 - ay1) : (by1 < ay0 ? (ay0 - by1) : 0);
             return dx + dy;
+          };
+          const vectorSignature = (dx, dy) => {
+            const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+            const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+            const ax = Math.abs(dx), ay = Math.abs(dy);
+            const axis = ax >= ay ? 'h' : 'v';
+            return axis + ':' + sx + ':' + sy + ':' + Math.min(12, Math.max(ax, ay));
+          };
+          const roadSet = new Set(items.filter(it => it.kind === 'road').map(it => key(it.x, it.y)));
+          const roadDegree = (x, y) => {
+            let deg = 0;
+            if (roadSet.has(key(x + 1, y))) deg++;
+            if (roadSet.has(key(x - 1, y))) deg++;
+            if (roadSet.has(key(x, y + 1))) deg++;
+            if (roadSet.has(key(x, y - 1))) deg++;
+            return deg;
           };
 
           const fieldAreaByFarm = new Map();
@@ -2986,6 +4351,10 @@
           let processNearBonus = 0;
           let processFarPenalty = 0;
           let repeatableModule = 0;
+          let moduleNearBonus = 0;
+          let moduleFarPenalty = 0;
+          let moduleConsistencyBonus = 0;
+          let moduleMismatchPenalty = 0;
 
           for (const pig of pigs) {
             const unitArea = Math.max(1, (pig.fields?.unitW || 1) * (pig.fields?.unitH || 1));
@@ -3014,6 +4383,46 @@
             if (rowAligned && gap <= 8) repeatableModule++;
           }
 
+          const groups = new Map();
+          for (const b of buildings) {
+            const gk = chainGroupKey(b);
+            if (gk === 'infra' || gk === 'misc') continue;
+            if (!groups.has(gk)) groups.set(gk, []);
+            groups.get(gk).push(b);
+          }
+          for (const [groupKey, list] of groups.entries()) {
+            const farms = list.filter(b => !!b.fields);
+            const procs = list.filter(b => !b.fields);
+            const vectorCounts = new Map();
+            for (const proc of procs) {
+              let nearestFarm = null;
+              let bestDist = Infinity;
+              for (const farm of farms) {
+                const d = manhattanRectDist(proc, farm);
+                if (d < bestDist) {
+                  bestDist = d;
+                  nearestFarm = farm;
+                }
+              }
+              if (!nearestFarm) continue;
+              if (bestDist <= 4) moduleNearBonus += groupKey === 'pilei' ? 16 : 11;
+              else if (bestDist <= 7) moduleNearBonus += groupKey === 'pilei' ? 8 : 5;
+              else moduleFarPenalty += (bestDist - 7) * (groupKey === 'pilei' ? 4.6 : 3.2);
+
+              const dx = (proc.x + Math.floor(proc.w / 2)) - (nearestFarm.x + Math.floor(nearestFarm.w / 2));
+              const dy = (proc.y + Math.floor(proc.h / 2)) - (nearestFarm.y + Math.floor(nearestFarm.h / 2));
+              const sig = vectorSignature(dx, dy);
+              vectorCounts.set(sig, (vectorCounts.get(sig) || 0) + 1);
+            }
+            if (vectorCounts.size) {
+              const counts = [...vectorCounts.values()].sort((a, b) => b - a);
+              const major = counts[0] || 0;
+              const total = counts.reduce((s, n) => s + n, 0);
+              moduleConsistencyBonus += major * (groupKey === 'pilei' ? 8 : 5);
+              moduleMismatchPenalty += Math.max(0, total - major) * (groupKey === 'pilei' ? 6 : 3);
+            }
+          }
+
           const padCells = new Set(items.filter(it => it.kind === 'pad').map(it => key(it.x, it.y)));
           const seenPads = new Set();
           let hardPocketPenalty = 0;
@@ -3037,27 +4446,70 @@
             if (size <= 6) hardPocketPenalty++;
           }
 
+          let straightRoadPenalty = 0;
+          let roadDeadEnds = 0;
+          for (const s of roadSet) {
+            const parts = s.split(',');
+            const x = Number(parts[0]), y = Number(parts[1]);
+            const deg = roadDegree(x, y);
+            if (deg <= 1) roadDeadEnds++;
+            if (deg === 2) {
+              const horizontal = roadSet.has(key(x - 1, y)) && roadSet.has(key(x + 1, y));
+              const vertical = roadSet.has(key(x, y - 1)) && roadSet.has(key(x, y + 1));
+              if (horizontal || vertical) straightRoadPenalty++;
+            }
+          }
+
           const aspect = Math.max(bb.w / Math.max(1, bb.h), bb.h / Math.max(1, bb.w));
           const aspectPenalty = Math.max(0, aspect - 1.45) * 50;
           const roadPerBuilding = roads / Math.max(1, buildings.length);
           const roadCoverage = roads / Math.max(1, bb.area);
+          const fillRatio = occupiedArea / Math.max(1, bb.area);
+          const slackPenalty = Math.max(0, 0.72 - fillRatio) * 140;
+          const contourPerimeter = (() => {
+            const occupied = new Set();
+            for (const it of items) {
+              for (let y = it.y; y < it.y + it.h; y++) {
+                for (let x = it.x; x < it.x + it.w; x++) occupied.add(key(x, y));
+              }
+            }
+            let edgeCount = 0;
+            for (const cell of occupied) {
+              const parts = cell.split(',');
+              const x = Number(parts[0]), y = Number(parts[1]);
+              if (!occupied.has(key(x + 1, y))) edgeCount++;
+              if (!occupied.has(key(x - 1, y))) edgeCount++;
+              if (!occupied.has(key(x, y + 1))) edgeCount++;
+              if (!occupied.has(key(x, y - 1))) edgeCount++;
+            }
+            return edgeCount;
+          })();
+          const contourPenalty = Math.max(0, (contourPerimeter / Math.max(1, Math.sqrt(occupiedArea))) - 5.7) * 18;
 
           let score = 0;
           score -= pigFull * 100;
           score += pigUnder * 50;
-          score += unused * 5;
+          score += unused * 6.5;
           // Prefer compact street-light layouts while keeping feasibility constraints intact.
           score += roads * 3.8;
           score += Math.max(0, roadPerBuilding - 1.8) * 35;
           score += roadCoverage * 180;
+          score += Math.max(0, straightRoadPenalty - Math.ceil(roads * 0.35)) * 3.2;
+          score += Math.max(0, roadDeadEnds - 2) * 4.5;
           score += pigNoWarehouseReach * 20;
-          score += hardPocketPenalty * 10;
+          score += hardPocketPenalty * 16;
           score -= Math.min(4, repeatableModule) * 10;
+          score -= moduleNearBonus;
+          score -= moduleConsistencyBonus;
+          score += moduleFarPenalty;
+          score += moduleMismatchPenalty;
           score -= processNearBonus * 10;
           score += processFarPenalty * 10;
           score += pigDistancePenalty * 0.35;
           score += missing * 1200;
           score += bb.area * 0.28;
+          score += slackPenalty;
+          score += contourPenalty;
           score += aspectPenalty;
           return { score, roads };
         }
@@ -3195,6 +4647,58 @@
             g.order = Math.max(0, Math.floor(Number(it.order) || 0));
           }
           return normalizeGenome(baseGenome);
+        }
+        function genomeFromLayoutSeed(layoutSeed, instances, w, h, rnd) {
+          if (!layoutSeed || !Array.isArray(layoutSeed.items) || layoutSeed.items.length < 2) return null;
+          const byId = new Map();
+          for (const inst of instances) {
+            const id = String(inst.id || '');
+            if (!byId.has(id)) byId.set(id, []);
+            byId.get(id).push(inst);
+          }
+          const baseGenome = randomGenome(instances, w, h, rnd);
+          const geneByUid = new Map(baseGenome.map(g => [g.uid, g]));
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const it of layoutSeed.items) {
+            const id = String(it.id || '');
+            const occ = Math.max(0, Math.floor(Number(it.occ) || 0));
+            const list = byId.get(id);
+            if (!list || occ >= list.length) continue;
+            const inst = list[occ];
+            const rot = Math.max(0, Math.min(1, Math.floor(Number(it.rot) || 0)));
+            const bw = rot ? inst.h : inst.w;
+            const bh = rot ? inst.w : inst.h;
+            const x = Math.round(Number(it.x) || 0);
+            const y = Math.round(Number(it.y) || 0);
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x + bw);
+            maxY = Math.max(maxY, y + bh);
+          }
+          if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) return null;
+          const seedW = Math.max(1, maxX - minX);
+          const seedH = Math.max(1, maxY - minY);
+          const shiftX = Math.max(0, Math.min(w - seedW, Math.round((w - seedW) / 2 + ((rnd() - 0.5) * Math.min(6, w * 0.12)))));
+          const shiftY = Math.max(0, Math.min(h - seedH, Math.round((h - seedH) / 2 + ((rnd() - 0.5) * Math.min(6, h * 0.12)))));
+          for (const it of layoutSeed.items) {
+            const id = String(it.id || '');
+            const occ = Math.max(0, Math.floor(Number(it.occ) || 0));
+            const list = byId.get(id);
+            if (!list || occ >= list.length) continue;
+            const inst = list[occ];
+            const gene = geneByUid.get(inst.uid);
+            if (!gene) continue;
+            gene.rot = Math.max(0, Math.min(1, Math.floor(Number(it.rot) || 0)));
+            const bw = gene.rot ? inst.h : inst.w;
+            const bh = gene.rot ? inst.w : inst.h;
+            const jitter = rnd() < 0.45 ? 1 : 0;
+            const jx = jitter ? Math.round((rnd() * 2) - 1) : 0;
+            const jy = jitter ? Math.round((rnd() * 2) - 1) : 0;
+            gene.x = Math.max(0, Math.min(w - bw, Math.round((Number(it.x) || 0) - minX + shiftX + jx)));
+            gene.y = Math.max(0, Math.min(h - bh, Math.round((Number(it.y) || 0) - minY + shiftY + jy)));
+            gene.order = Math.max(0, Math.floor(Number(it.order) || 0));
+          }
+          return normalizeGenome([...geneByUid.values()]);
         }
         function buildPlacedFromGenome(genome, instances, w, h) {
           const byUid = new Map(instances.map(b => [b.uid, b]));
@@ -3399,12 +4903,26 @@
           }
           return normalizeGenome(out);
         }
-        function seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats, patternSeeds, strategyContextMul) {
+        function seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats, patternSeeds, solutionSeeds, strategyContextMul) {
           const population = [];
           const contextMul = strategyContextMul && typeof strategyContextMul === 'object'
             ? strategyContextMul
             : Object.fromEntries(STRATEGY_NAMES.map(name => [name, 1]));
           const seededPatternList = Array.isArray(patternSeeds) ? patternSeeds : [];
+          const solutionSeedList = Array.isArray(solutionSeeds) ? solutionSeeds : [];
+          for (let si = 0; si < solutionSeedList.length; si++) {
+            if (population.length >= popSize) break;
+            const solutionSeed = solutionSeedList[si];
+            for (let st = 0; st < 2; st++) {
+              if (population.length >= popSize) break;
+              let genome = genomeFromLayoutSeed(solutionSeed, instances, w, h, rnd);
+              if (!genome) continue;
+              if (st > 0 || rnd() < 0.7) genome = localRepairGenome(genome, instances, w, h, 'seed_layout_refine', rnd, 10);
+              const ev = evaluateGenome(genome, instances, w, h, 'seed_layout_refine');
+              if (!ev.solution) continue;
+              population.push({ genome: normalizeGenome(genome), fitness: ev.fitness, solution: ev.solution });
+            }
+          }
           for (let pi = 0; pi < seededPatternList.length; pi++) {
             if (population.length >= popSize) break;
             const patternSeed = seededPatternList[pi];
@@ -3422,15 +4940,24 @@
             strategyStats[strategy].attempts++;
             let strategyBase = strategy;
             if (strategy === 'local_repair_seed') {
-              const basePool = ['island_chain_cluster', 'radial_hub_spoke', 'roadtree_compact', 'row_chain_gap1'];
+              const basePool = ['island_chain_cluster', 'radial_hub_spoke', 'roadtree_compact', 'row_chain_gap1', 'random_feasible_bootstrap', 'chain_module_stack'];
               strategyBase = basePool[Math.floor(rnd() * basePool.length)];
             }
-            const placed = packWithStrategy(instances, w, h, rnd, strategyBase);
-            if (!placed) return false;
-            let genome = genomeFromBuildings(instances, placed, rnd);
+            let genome = null;
+            if (strategy === 'layout_refine_seed') {
+              if (!solutionSeedList.length) return false;
+              const layoutSeed = solutionSeedList[Math.floor(rnd() * solutionSeedList.length)];
+              genome = genomeFromLayoutSeed(layoutSeed, instances, w, h, rnd);
+              if (genome) genome = localRepairGenome(genome, instances, w, h, 'seed_layout_refine', rnd, 10);
+            } else {
+              const placed = packWithStrategy(instances, w, h, rnd, strategyBase);
+              if (!placed) return false;
+              genome = genomeFromBuildings(instances, placed, rnd);
+            }
             if (strategy === 'local_repair_seed' && genome) {
               genome = localRepairGenome(genome, instances, w, h, 'seed_local_repair', rnd, 8);
             }
+            if (!genome) return false;
             const ev = evaluateGenome(genome, instances, w, h, 'seed_' + strategy);
             if (!ev.solution) return false;
             strategyStats[strategy].hits++;
@@ -3475,9 +5002,9 @@
           }
           return population;
         }
-        function evolveForCandidate(instances, w, h, seed, strategyWeights, strategyStats, generations, popSize, patternSeeds, strategyContextMul) {
+        function evolveForCandidate(instances, w, h, seed, strategyWeights, strategyStats, generations, popSize, patternSeeds, solutionSeeds, strategyContextMul) {
           const rnd = rng(seed >>> 0);
-          let population = seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats, patternSeeds, strategyContextMul);
+          let population = seedPopulation(instances, w, h, popSize, rnd, strategyWeights, strategyStats, patternSeeds, solutionSeeds, strategyContextMul);
           const eliteCount = Math.max(4, Math.floor(popSize * 0.14));
           for (let gen = 0; gen < generations; gen++) {
             if (cancelled) break;
@@ -3506,6 +5033,27 @@
               }
             }
             population = next;
+          }
+          population.sort((a, b) => a.fitness - b.fitness);
+          return population;
+        }
+        function polishPopulation(population, instances, w, h, seed, maxEntries = 3, maxSteps = 10) {
+          if (!Array.isArray(population) || !population.length) return population;
+          const rnd = rng((seed ^ 0x85ebca6b) >>> 0);
+          population.sort((a, b) => a.fitness - b.fitness);
+          const polishCount = Math.max(1, Math.min(maxEntries, population.length));
+          for (let i = 0; i < polishCount; i++) {
+            const entry = population[i];
+            if (!entry || !entry.genome) continue;
+            const repairedGenome = localRepairGenome(entry.genome, instances, w, h, 'final_polish', rnd, maxSteps);
+            const repairedEval = evaluateGenome(repairedGenome, instances, w, h, 'final_polish_eval');
+            if (repairedEval && repairedEval.solution && repairedEval.fitness + 1e-6 < entry.fitness) {
+              population[i] = {
+                genome: normalizeGenome(repairedGenome),
+                fitness: repairedEval.fitness,
+                solution: repairedEval.solution
+              };
+            }
           }
           population.sort((a, b) => a.fitness - b.fitness);
           return population;
@@ -3549,7 +5097,7 @@
         }
         function solve(payload) {
           cancelled = false;
-          const { counts, catalog, gridW, gridH, strategyWeights: inputWeights, seedSalt = 0, candidateOffset = 0, candidateStride = 1, workerId = 0, workerCount = 1, runId = 0, thermalSafe = false, runMode = 'optimize', trainingProfileId = '', patternSeeds = [] } = payload;
+          const { counts, catalog, gridW, gridH, strategyWeights: inputWeights, seedSalt = 0, candidateOffset = 0, candidateStride = 1, workerId = 0, workerCount = 1, runId = 0, thermalSafe = false, runMode = 'optimize', trainingProfileId = '', patternSeeds = [], solutionSeeds = [], warmupIntensity = 1, warmupCandidates = 0 } = payload;
           const instances = buildInstances(counts, catalog);
           if (!instances.length) { postMessage({ type: 'done', solutions: [], workerId, workerCount, runId }); return; }
           const strategyWeights = sanitizeStrategyWeights(inputWeights || {});
@@ -3591,35 +5139,60 @@
             generations = Math.min(58, Math.max(generations + 10, Math.floor(generations * 1.35)));
             popSize = Math.min(78, Math.max(popSize + 14, Math.floor(popSize * 1.28)));
           }
-          const maxAttempts = candidates.length * generations;
+          const baseWarmupIntensity = Math.max(0.3, Math.min(1, Number(warmupIntensity) || 1));
+          const warmupSpan = Math.max(0, Math.min(candidates.length, Math.floor(Number(warmupCandidates) || 0)));
+          const candidatePlans = candidates.map((cand, candIdx) => {
+            let localIntensity = 1;
+            if (warmupSpan > 0 && candIdx < warmupSpan) {
+              const denom = Math.max(1, warmupSpan - 1);
+              const t = warmupSpan <= 1 ? 1 : (candIdx / denom);
+              localIntensity = baseWarmupIntensity + ((1 - baseWarmupIntensity) * t);
+            }
+            const candGenerations = Math.max(8, Math.min(64, Math.floor(generations * localIntensity)));
+            const candPopSize = Math.max(20, Math.min(96, Math.floor(popSize * (0.48 + localIntensity * 0.52))));
+            return { cand, candIdx, localIntensity, candGenerations, candPopSize };
+          });
+          const maxAttempts = candidatePlans.reduce((sum, entry) => sum + entry.candGenerations, 0);
           let tries = 0;
           const solutions = [];
           const keys = new Set();
+          let lastProgressAt = 0;
+          let lastProgressPct = -1;
+          const emitProgress = force => {
+            const pct = maxAttempts ? Math.round((tries / Math.max(1, maxAttempts)) * 100) : 100;
+            const now = Date.now();
+            if (!force) {
+              if ((now - lastProgressAt) < ${WORKER_PROGRESS_MIN_INTERVAL_MS} && (pct - lastProgressPct) < ${WORKER_PROGRESS_MIN_DELTA_PCT}) return;
+            }
+            lastProgressAt = now;
+            lastProgressPct = pct;
+            const best = solutions[0] || null;
+            postMessage({
+              type: 'progress',
+              progress: pct,
+              tries,
+              maxAttempts,
+              best: best ? { score: best.score, bbox: best.bbox, missingFields: best.missingFields, pads: best.pads } : null,
+              topStrategy: topContextStrategy,
+              workerId,
+              workerCount,
+              runId
+            });
+          };
 
           const effectivePatternSeeds = Array.isArray(patternSeeds) ? patternSeeds.slice(0, 8) : [];
-          for (const cand of candidates) {
+          const effectiveSolutionSeeds = Array.isArray(solutionSeeds) ? solutionSeeds.slice(0, 6) : [];
+          for (const entry of candidatePlans) {
             if (cancelled) break;
+            const { cand, candGenerations, candPopSize } = entry;
             const salt = (Number(seedSalt) || 0) >>> 0;
             const seed = ((cand.w * 73856093) ^ (cand.h * 19349663) ^ ((salt + 1) * 2654435761) ^ 911382323) >>> 0;
-            const population = evolveForCandidate(instances, cand.w, cand.h, seed, strategyWeights, strategyStats, generations, popSize, effectivePatternSeeds, strategyContextMul);
-            for (let i = 0; i < generations; i++) {
-              tries++;
-              if (tries % 2 === 0 || tries === maxAttempts) {
-                const best = solutions[0] || (population[0] && population[0].solution) || null;
-                postMessage({
-                  type: 'progress',
-                  progress: Math.round((tries / Math.max(1, maxAttempts)) * 100),
-                  tries,
-                  maxAttempts,
-                  best: best ? { score: best.score, bbox: best.bbox, missingFields: best.missingFields, pads: best.pads } : null,
-                  topStrategy: topContextStrategy,
-                  workerId,
-                  workerCount,
-                  runId
-                });
-              }
-            }
-            const top = population.slice(0, 8);
+            let population = evolveForCandidate(instances, cand.w, cand.h, seed, strategyWeights, strategyStats, candGenerations, candPopSize, effectivePatternSeeds, effectiveSolutionSeeds, strategyContextMul);
+            const polishEntries = quickMode ? 1 : (complexTraining ? 4 : 3);
+            const polishSteps = quickMode ? 6 : (complexTraining ? 18 : 12);
+            population = polishPopulation(population, instances, cand.w, cand.h, seed, polishEntries, polishSteps);
+            tries += candGenerations;
+            const top = population.slice(0, ${WORKER_MAX_SOLUTIONS_PER_DONE});
             for (const p of top) {
               if (!p || !p.solution) continue;
               const k = layoutKey(p.solution);
@@ -3627,8 +5200,9 @@
               keys.add(k);
               solutions.push(p.solution);
               solutions.sort((a, b) => a.score - b.score);
-              if (solutions.length > 12) solutions.splice(12);
+              if (solutions.length > ${WORKER_MAX_SOLUTIONS_PER_DONE}) solutions.splice(${WORKER_MAX_SOLUTIONS_PER_DONE});
             }
+            emitProgress(tries >= maxAttempts);
           }
 
           if (!cancelled && !solutions.length) {
@@ -3647,11 +5221,12 @@
                 keys.add(k);
                 solutions.push(sol);
                 solutions.sort((a, b) => a.score - b.score);
-                if (solutions.length > 12) solutions.splice(12);
+                if (solutions.length > ${WORKER_MAX_SOLUTIONS_PER_DONE}) solutions.splice(${WORKER_MAX_SOLUTIONS_PER_DONE});
               }
             }
           }
           solutions.sort((a, b) => a.score - b.score);
+          emitProgress(true);
           postMessage({ type: 'done', solutions, strategyWeights, strategyStats, workerId, workerCount, runId, tries, maxAttempts });
         }
         onmessage = ev => {
@@ -3663,11 +5238,12 @@
       const blob = new Blob([workerSource], { type: 'text/javascript' });
       workerUrl = URL.createObjectURL(blob);
       const nextWorker = new Worker(workerUrl);
-      nextWorker.onmessage = handleWorkerMessage;
+      nextWorker.__jobCount = 0;
+      nextWorker.onmessage = ev => handleWorkerMessage(ev, nextWorker);
       return nextWorker;
     }
 
-    function handleWorkerMessage(ev) {
+    function handleWorkerMessage(ev, sourceWorker = null) {
       let msg = ev.data || {};
       if ((msg.type === 'progress' || msg.type === 'done') && activeRun) {
         if ((Number(msg.runId) || 0) !== activeRun.runId) return;
@@ -3684,18 +5260,20 @@
         let tries = 0;
         let maxAttempts = 0;
         let best = null;
+        let progressSum = 0;
         for (const p of activeRun.progressByWorker.values()) {
           tries += p.tries;
           maxAttempts += p.maxAttempts;
+          progressSum += Math.max(0, Math.min(100, Number(p.progress) || 0));
           if (p.best && (!best || Number(p.best.score) < Number(best.score))) best = p.best;
         }
         msg = {
           ...msg,
           tries,
           maxAttempts,
-          progress: maxAttempts ? Math.round((tries / maxAttempts) * 100) : msg.progress,
+          progress: Math.round(progressSum / Math.max(1, activeRun.workerCount)),
           best,
-          topStrategy: `${activeRun.workerCount} Worker`
+          topStrategy: `${activeRun.activeWorkers}/${activeRun.activeLimit} aktiv`
         };
       }
       if (msg.type === 'progress') {
@@ -3716,6 +5294,14 @@
           setStatus(`Training laeuft...`, `${bestText}${loadText}${chainText}${pctText}${stratText}`, (pctBase + pctRun) * 100);
           const elapsedSec = activeRun && activeRun.startedAt ? Math.max(0.1, (performance.now() - activeRun.startedAt) / 1000) : 0.1;
           const apsNow = Math.max(0, (Number(msg.tries) || 0) / elapsedSec);
+          setTrainingMonitor({
+            mode: 'Training',
+            run: `${cycle}/${trainingState.totalRuns} | ${runPct}%`,
+            queue: `${activeRun ? activeRun.activeWorkers : '-'} / ${activeRun ? activeRun.activeLimit : '-'} aktiv`,
+            aps: apsNow.toFixed(2),
+            bestBox: msg.best ? `${msg.best.bbox.w}x${msg.best.bbox.h}` : '-',
+            bestScore: msg.best ? `${Math.round(Number(msg.best.score) || 0)}` : '-'
+          });
           setLiveTuningText(`Worker ${activeRun ? activeRun.workerCount : '-'} | Versuche ${Number(msg.tries) || 0}/${Number(msg.maxAttempts) || 0} | APS ${apsNow.toFixed(2)} | ${msg.topStrategy || 'genetic'}${entry ? ' | ' + entry.profileLabel : ''}`);
           return;
         }
@@ -3727,13 +5313,42 @@
         setStatus(`Suche laeuft... ${msg.tries}/${msg.maxAttempts}`, `${bestText}${stratText}`, msg.progress || 0);
         const elapsedSec = activeRun && activeRun.startedAt ? Math.max(0.1, (performance.now() - activeRun.startedAt) / 1000) : 0.1;
         const apsNow = Math.max(0, (Number(msg.tries) || 0) / elapsedSec);
+        setTrainingMonitor({
+          mode: 'Optimierung',
+          run: `${Math.max(0, Math.min(100, Math.floor(Number(msg.progress) || 0)))}%`,
+          queue: `${activeRun ? activeRun.activeWorkers : '-'} / ${activeRun ? activeRun.activeLimit : '-'} aktiv`,
+          aps: apsNow.toFixed(2),
+          bestBox: msg.best ? `${msg.best.bbox.w}x${msg.best.bbox.h}` : '-',
+          bestScore: msg.best ? `${Math.round(Number(msg.best.score) || 0)}` : '-'
+        });
         setLiveTuningText(`Worker ${activeRun ? activeRun.workerCount : '-'} | Versuche ${Number(msg.tries) || 0}/${Number(msg.maxAttempts) || 0} | APS ${apsNow.toFixed(2)} | ${msg.topStrategy || 'genetic'}`);
       }
       if (msg.type === 'done') {
+        let completedWorkerCount = null;
         if (activeRun) {
           const runMeta = activeRun;
+          completedWorkerCount = runMeta.workerCount;
+          const doneId = Number.isFinite(Number(msg.workerId)) ? Number(msg.workerId) : 0;
+          runMeta.progressByWorker.set(doneId, {
+            progress: 100,
+            tries: Number(msg.tries) || 0,
+            maxAttempts: Number(msg.maxAttempts) || 0,
+            best: Array.isArray(msg.solutions) && msg.solutions.length ? msg.solutions[0] : null,
+            topStrategy: ''
+          });
           activeRun.doneMessages.push(msg);
           activeRun.pending--;
+          activeRun.activeWorkers = Math.max(0, activeRun.activeWorkers - 1);
+          if (sourceWorker) {
+            const completedJobs = Math.max(0, Math.floor(Number(sourceWorker.__jobCount) || 0)) + 1;
+            sourceWorker.__jobCount = completedJobs;
+            const recycle = completedJobs >= PHYSICAL_WORKER_JOB_LIMIT;
+            const idleWorker = recycle ? replaceWorkerInstance(sourceWorker) : sourceWorker;
+            if (!runMeta.idleWorkers.includes(idleWorker)) {
+              runMeta.idleWorkers.push(idleWorker);
+            }
+          }
+          launchQueuedWorkers();
           if (activeRun.pending > 0) return;
 
           const solutions = [];
@@ -3801,13 +5416,29 @@
           const cycleBest = cycleSolutions[0] || null;
           if (cycleBest) {
             rememberPatternFromSolution(cycleBest, runEntry?.counts || null);
-            activeSolutions = cycleSolutions.slice(0, 12);
+            recordScoreHistory('training', cycleBest, `run_${finishedRunNo}`);
+            activeSolutions = [cycleBest];
             activeIndex = 0;
             renderSolutions();
             drawSolution(cycleBest);
+            setTrainingMonitor({
+              mode: 'Training',
+              run: `${finishedRunNo}/${trainingState.totalRuns} fertig`,
+              queue: `${completedWorkerCount || '-'} Worker`,
+              aps: Number.isFinite(Number(autoTuneState?.lastAps)) ? Number(autoTuneState.lastAps).toFixed(2) : '-',
+              bestBox: `${cycleBest.bbox.w}x${cycleBest.bbox.h}`,
+              bestScore: `${Math.round(Number(cycleBest.score) || 0)}`
+            });
+            pushTrainingMonitorEvent(`Lauf ${finishedRunNo} | ${cycleBest.bbox.w}x${cycleBest.bbox.h} | Score ${Math.round(Number(cycleBest.score) || 0)} | Unbenutzt ${cycleBest.pads || 0}`);
+          } else {
+            pushTrainingMonitorEvent(`Lauf ${finishedRunNo} | kein Treffer`);
           }
 
           trainingState.done++;
+          const shouldWriteFullCheckpoint = (finishedRunNo % 4) === 0;
+          Promise.resolve(
+            persistLearningCheckpoint(`training_run_${finishedRunNo}`, { fullSnapshot: shouldWriteFullCheckpoint })
+          ).catch(() => {});
           if (cancelRequested) trainingState.cancelled = true;
 
           if (trainingState.cancelled || trainingState.done >= trainingState.totalRuns) {
@@ -3842,7 +5473,8 @@
           const nextSalt = ((trainingState.done + 1) * 104729) ^ (Date.now() & 0xffff);
           const nextRun = trainingState.done + 1;
           const totalRuns = trainingState.totalRuns;
-          const waitSec = Math.max(1, Math.ceil(TRAIN_PAUSE_MS / 1000));
+          const cooldownMs = trainingRecoveryPauseMs(runEntry, msg.durationMs, finishedRunNo);
+          const waitSec = Math.max(1, Math.ceil(cooldownMs / 1000));
           terminateWorkerPool();
           const runResultText = cycleBest
             ? `Lauf ${finishedRunNo} fertig | ${cycleBest.bbox.w}x${cycleBest.bbox.h} | MissingFields ${cycleBest.missingFields} | Unbenutzt ${cycleBest.pads || 0}`
@@ -3858,14 +5490,24 @@
             `${runResultText}${runLoadText}${runChainText} | Naechster Lauf ${nextRun}/${totalRuns} startet in ${waitSec}s.`,
             (trainingState.done / Math.max(1, totalRuns)) * 100
           );
+          setTrainingMonitor({
+            mode: 'Training Pause',
+            run: `${nextRun}/${totalRuns} wartet`,
+            queue: `Cooldown ${waitSec}s`,
+            aps: '-'
+          });
           setRunProgressText('Pause');
           setLiveTuningText(`Cooldown ${waitSec}s | naechster Lauf ${nextRun}/${totalRuns}`, true);
           clearTrainingDelayTimer();
           trainingDelayTimer = setTimeout(() => {
             trainingDelayTimer = null;
-            if (!running || cancelRequested || !trainingState || trainingState.cancelled) return;
+            if (!trainingState || trainingState.cancelled || cancelRequested) return;
+            if (trainingState.done >= trainingState.totalRuns) return;
+            running = true;
+            setRunUi(true);
+            pushTrainingMonitorEvent(`Naechster Lauf startet | ${nextRun}/${totalRuns}`);
             startNextTrainingRun(nextSalt >>> 0, true);
-          }, TRAIN_PAUSE_MS);
+          }, cooldownMs);
           return;
         }
 
@@ -3889,11 +5531,22 @@
           `Beste ${best.bbox.w}x${best.bbox.h} | MissingFields ${best.missingFields} | Unbenutzt ${best.pads || 0}${topText}`,
           100
         );
+        setTrainingMonitor({
+          mode: 'Optimierung fertig',
+          run: '100%',
+          queue: `${msg.tries || 0} Versuche`,
+          aps: Number.isFinite(Number(autoTuneState?.lastAps)) ? Number(autoTuneState.lastAps).toFixed(2) : '-',
+          bestBox: `${best.bbox.w}x${best.bbox.h}`,
+          bestScore: `${Math.round(Number(best.score) || 0)}`
+        });
+        recordScoreHistory('optimize', best, 'optimize_run');
+        pushTrainingMonitorEvent(`Optimierung | ${best.bbox.w}x${best.bbox.h} | Score ${Math.round(Number(best.score) || 0)} | Unbenutzt ${best.pads || 0}`);
         setRunProgressText('-');
         setLiveTuningText(null, true);
         activeIndex = 0;
         renderSolutions();
         drawSolution(best);
+        void persistLearningCheckpoint('optimize_run');
         terminateWorkerPool();
       }
     }
@@ -3906,7 +5559,13 @@
       const runCounts = (opts.countsOverride && typeof opts.countsOverride === 'object') ? opts.countsOverride : counts;
       const runLoad = summarizeCountsMap(runCounts);
       const workerCount = optimizerWorkerCount(isTrainingRun, runLoad, trainingProfileId);
+      const activeWorkerCount = optimizerActiveWorkerCount(workerCount, isTrainingRun, runLoad, trainingProfileId);
       const patternSeeds = buildPatternSeedsForCounts(runCounts, isTrainingRun ? 6 : 4);
+      const solutionSeedSources = [
+        ...((Array.isArray(activeSolutions) ? activeSolutions : [])),
+        ...((trainingState && Array.isArray(trainingState.solutions)) ? trainingState.solutions : [])
+      ];
+      const solutionSeeds = buildSolutionSeedsForCounts(runCounts, solutionSeedSources, isTrainingRun ? 4 : 6);
       if (patternSeeds.length) {
         const used = new Set(patternSeeds.map(s => String(s.fingerprint || '')).filter(Boolean));
         if (used.size) {
@@ -3920,51 +5579,66 @@
         }
       }
       const softStart = !!opts.softStart;
-      setLiveTuningText(softStart ? `Soft-Start mit ${workerCount} Workern...` : `Start mit ${workerCount} Workern...`, true);
+      const autoSoftStart = workerCount >= 4 || thermalSafeMode || runLoad.buildingCount >= 8 || runLoad.fieldCount >= 180;
+      const useSoftStart = softStart || autoSoftStart;
+      const startPlan = useSoftStart ? buildSoftStartPlan(workerCount, runLoad, thermalSafeMode) : Array.from({ length: workerCount }, () => 0);
+      const warmupPlan = useSoftStart
+        ? buildSoftStartWarmupPlan(startPlan, runLoad, thermalSafeMode)
+        : Array.from({ length: workerCount }, () => ({ warmupIntensity: 1, warmupCandidates: 0 }));
+      const startWindow = startPlan.length ? Math.max(...startPlan) : 0;
+      setLiveTuningText(
+        useSoftStart
+          ? `Soft-Start mit ${workerCount} Workern | aktiv max ${activeWorkerCount} | Ramp ${Math.max(0, Math.round(startWindow / 100) / 10)}s...`
+          : `Start mit ${workerCount} Workern | aktiv max ${activeWorkerCount}...`,
+        true
+      );
       const runId = ++runSerial;
+      const launchBaseAt = Date.now();
       activeRun = {
         runId,
         workerCount,
+        activeLimit: activeWorkerCount,
+        activeWorkers: 0,
         startedAt: performance.now(),
         pending: workerCount,
         doneMessages: [],
-        progressByWorker: new Map()
+        progressByWorker: new Map(),
+        idleWorkers: [],
+        workerJobs: []
       };
-      const pool = ensureWorkerPool(workerCount);
-      pool.forEach((w, i) => {
-        const startWorker = () => {
-          w.postMessage({
-            type: 'optimize',
-            payload: {
-              counts: { ...runCounts },
-              catalog: CATALOG,
-              gridW: GRID_W,
-              gridH: GRID_H,
-              strategyWeights,
-              seedSalt,
-              candidateOffset: i,
-              candidateStride: workerCount,
-              workerId: i,
-              workerCount,
-              runId,
-              thermalSafe: thermalSafeMode,
-              runMode,
-              trainingProfileId,
-              patternSeeds
-            }
-          });
-        };
-        if (softStart) {
-          const delay = i * RUN_SOFT_START_STAGGER_MS;
-          if (delay <= 0) {
-            startWorker();
-          } else {
-            runStartTimers.push(setTimeout(startWorker, delay));
+      const pool = ensureWorkerPool(activeWorkerCount);
+      activeRun.idleWorkers = pool.slice();
+      activeRun.workerJobs = Array.from({ length: workerCount }, (_, i) => {
+        const warmup = warmupPlan[i] || { warmupIntensity: 1, warmupCandidates: 0 };
+        const delay = useSoftStart ? Math.max(0, Number(startPlan[i]) || 0) : 0;
+        return {
+          worker: null,
+          workerId: i,
+          started: false,
+          readyAt: launchBaseAt + delay,
+          payload: {
+            counts: { ...runCounts },
+            catalog: CATALOG,
+            gridW: GRID_W,
+            gridH: GRID_H,
+            strategyWeights,
+            seedSalt,
+            candidateOffset: i,
+            candidateStride: workerCount,
+            workerId: i,
+            workerCount,
+            runId,
+            thermalSafe: thermalSafeMode,
+            runMode,
+            trainingProfileId,
+            patternSeeds,
+            solutionSeeds,
+            warmupIntensity: Number(warmup.warmupIntensity) || 1,
+            warmupCandidates: Number(warmup.warmupCandidates) || 0
           }
-        } else {
-          startWorker();
-        }
+        };
       });
+      launchQueuedWorkers();
     }
 
     function startNextTrainingRun(seedSalt, softStart = false) {
@@ -3982,6 +5656,15 @@
         `Komplexitaet ${entry.profileLabel} | Gebaeude ${entry.buildingCount} | Felder ${entry.fieldCount} | Ketten ${chainText}`,
         basePct
       );
+      setTrainingMonitor({
+        mode: 'Training',
+        run: `${runNo}/${totalRuns} startet`,
+        queue: 'wird aufgebaut',
+        aps: '-',
+        bestBox: '-',
+        bestScore: '-'
+      });
+      pushTrainingMonitorEvent(`Start Lauf ${runNo}/${totalRuns} | ${entry.profileLabel} | Gebaeude ${entry.buildingCount}`);
       setRunProgressText('0%');
       setLiveTuningText(`Lauf ${runNo}/${totalRuns} | ${entry.profileLabel} | Gebaeude ${entry.buildingCount} | Ketten ${chainText}`, true);
       postOptimizeRun(seedSalt, { softStart, runMode: 'training', trainingProfileId: entry.profileId, countsOverride: entry.counts });
@@ -3996,6 +5679,23 @@
       const runs = Math.max(1, Math.min(TRAIN_MAX_RUNS, Math.floor(Number(raw) || 0)));
       if (!Number.isFinite(runs) || runs <= 0) return;
 
+      let plan = [];
+      const planSeed = (Date.now() ^ 0x7f4a7c15) >>> 0;
+      if (trainingMode === 'targeted') {
+        const targetedCounts = normalizeTargetedTrainingCounts(counts);
+        if (!targetedCounts) {
+          setStatus('Gezieltes Training braucht eine Auswahl.', 'Setze links die gewuenschten Gebaeude. Ein Lagerhaus wird automatisch mitgefuehrt.', 0);
+          return;
+        }
+        plan = buildTargetedTrainingRunPlan(runs, targetedCounts);
+      } else {
+        plan = buildTrainingRunPlan(runs, planSeed);
+      }
+      if (!Array.isArray(plan) || !plan.length) {
+        setStatus('Kein Trainingsplan erzeugt.', 'Bitte Auswahl oder Trainingsfokus pruefen.', 0);
+        return;
+      }
+
       running = true;
       cancelRequested = false;
       trainingState = {
@@ -4005,15 +5705,16 @@
         solutions: [],
         solutionKeys: new Set()
       };
-      const planSeed = (Date.now() ^ 0x7f4a7c15) >>> 0;
-      trainingState.plan = buildTrainingRunPlan(runs, planSeed);
+      trainingState.plan = plan;
       trainingState.currentEntry = trainingState.plan[0] || null;
       activeSolutions = [];
       activeIndex = -1;
       renderSolutions();
       drawSolution(null);
+      resetTrainingMonitor('Training');
+      pushTrainingMonitorEvent(`Trainingsblock gestartet | ${runs} Laeufe | ${trainingMode === 'targeted' ? 'aktuelle Auswahl' : 'auto mix'}`);
       setRunUi(true);
-      setStatus('Training startet...', `0/${runs} Laeufe | Aufgabenplan wird erzeugt...`, 0);
+      setStatus('Training startet...', `0/${runs} Laeufe | Modus ${trainingMode === 'targeted' ? 'aktuelle Auswahl' : 'auto mix'} | Aufgabenplan wird erzeugt...`, 0);
       setRunProgressText('0%');
       setLiveTuningText('Training initialisiert...', true);
       const seedSalt = (Date.now() ^ 0x9e3779b9) >>> 0;
@@ -4155,6 +5856,8 @@
       activeIndex = -1;
       renderSolutions();
       drawSolution(null);
+      resetTrainingMonitor('Optimierung');
+      pushTrainingMonitorEvent('Frische Optimierung gestartet');
       setStatus('Starte frische Optimierung...', 'Worker wird initialisiert.', 2);
       setRunProgressText('0%');
       setLiveTuningText('Optimierung initialisiert...', true);
@@ -4186,6 +5889,8 @@
         }
         setRunProgressText('-');
         setRunUi(false);
+        resetTrainingMonitor('Gestoppt');
+        pushTrainingMonitorEvent(`Abbruch | ${finished}/${total} Laeufe`);
         setStatus(`Training gestoppt: ${finished}/${total} Laeufe.`, 'Pause/naechster Lauf wurde abgebrochen.', 0);
         setLiveTuningText('Gestoppt.', true);
       }
@@ -4200,6 +5905,22 @@
       workerCountInputEl.value = String(n);
       const info = n === 0 ? 'Auto aktiv (dynamisch).' : `Fix auf ${n} Worker.`;
       setStatus('Worker-Einstellung gespeichert.', info, null);
+    });
+    activeWorkerCountInputEl.value = String(activeWorkerOverride);
+    activeWorkerCountInputEl.addEventListener('change', () => {
+      const n = saveActiveWorkerOverride(activeWorkerCountInputEl.value);
+      activeWorkerCountInputEl.value = String(n);
+      const info = n === 0 ? 'Auto aktiv (Queue begrenzt Last automatisch).' : `Maximal ${n} Worker gleichzeitig aktiv.`;
+      setStatus('Aktive-Worker gespeichert.', info, null);
+    });
+    trainingModeSelectEl.value = trainingMode;
+    trainingModeSelectEl.addEventListener('change', () => {
+      const mode = saveTrainingMode(trainingModeSelectEl.value);
+      trainingModeSelectEl.value = mode;
+      const info = mode === 'targeted'
+        ? 'Training nutzt jetzt genau die links gesetzte Gebaeudeauswahl.'
+        : 'Training erzeugt wieder automatisch sinnvolle Kombinationen.';
+      setStatus('Trainingsfokus gespeichert.', info, null);
     });
     thermalSafeInputEl.checked = !!thermalSafeMode;
     thermalSafeInputEl.addEventListener('change', () => {
@@ -4255,13 +5976,14 @@
     });
 
     buildCatalog();
-    saveLayoutPatternMemory();
     renderSolutions();
     drawSolution(null);
     updateTrainingSnapshotText();
     setRunProgressText('-');
     setLiveTuningText(null, true);
+    resetTrainingMonitor('Bereit');
     setStatus('Bereit.', 'Frischer Solver mit Worker-Engine.', 0);
+    void hydratePersistentState();
   </script>
 </body>
 </html>
